@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>JLEAK Simple Stock Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18",
+        "react-dom/client": "https://esm.sh/react-dom@18/client"
+      }
+    }
+  </script>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+
+    function App() {
+      const [date, setDate] = React.useState(() => new Date().toISOString().slice(0,10));
+      const [apiKey, setApiKey] = React.useState('');
+      const [gappers, setGappers] = React.useState([]);
+      const [loading, setLoading] = React.useState(false);
+
+      const fetchGappers = async () => {
+        if (!apiKey) { alert('Enter Polygon.io API key'); return; }
+        setLoading(true);
+        try {
+          const resp = await fetch(`https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${date}?adjusted=true&apiKey=${apiKey}`);
+          const data = await resp.json();
+          if (!data.results) { throw new Error(data.error || 'No data'); }
+          const g = data.results
+            .filter(r => r.o && r.c && ((r.o - r.c) / r.c) * 100 > 10)
+            .slice(0, 50)
+            .map(r => ({ ticker: r.T, open: r.o, close: r.c, volume: r.v }));
+          setGappers(g);
+        } catch (err) {
+          console.error(err);
+          alert('Error fetching data: ' + err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        React.createElement('div', null,
+          React.createElement('h1', null, 'JLEAK Simple Stock Scanner'),
+          React.createElement('p', null, 'Enter a date and your Polygon.io API key to fetch gap-up stocks.'),
+          React.createElement('label', null, 'Date: ',
+            React.createElement('input', {
+              type: 'date',
+              value: date,
+              onChange: e => setDate(e.target.value)
+            })
+          ),
+          React.createElement('label', { style: { marginLeft: '1rem' } }, 'API Key: ',
+            React.createElement('input', {
+              type: 'password',
+              value: apiKey,
+              onChange: e => setApiKey(e.target.value)
+            })
+          ),
+          React.createElement('button', {
+            onClick: fetchGappers,
+            disabled: loading,
+            style: { marginLeft: '1rem' }
+          }, loading ? 'Loading...' : 'Fetch'),
+          gappers.length > 0 && React.createElement('table', null,
+            React.createElement('thead', null,
+              React.createElement('tr', null,
+                React.createElement('th', null, 'Ticker'),
+                React.createElement('th', null, 'Open'),
+                React.createElement('th', null, 'Close'),
+                React.createElement('th', null, 'Volume')
+              )
+            ),
+            React.createElement('tbody', null,
+              gappers.map(g => React.createElement('tr', { key: g.ticker },
+                React.createElement('td', null, g.ticker),
+                React.createElement('td', null, g.open.toFixed(2)),
+                React.createElement('td', null, g.close.toFixed(2)),
+                React.createElement('td', null, g.volume)
+              ))
+            )
+          )
+        )
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>
