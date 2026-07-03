@@ -4,9 +4,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Text } from 'react-native';
 import { colors } from '../constants/theme';
 import { ScannerScreen } from '../screens/ScannerScreen';
-import { HistoricalScreen } from '../screens/HistoricalScreen';
+import { GapViewerScreen } from '../screens/GapViewerScreen';
 import { WatchlistScreen } from '../screens/WatchlistScreen';
 import { StockDetailScreen } from '../screens/StockDetailScreen';
+import { GapDayScreen } from '../screens/GapDayScreen';
 import { MainTabParamList, RootStackParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -27,7 +28,7 @@ const navTheme = {
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   const icons: Record<string, string> = {
     Scanner: '◎',
-    Historical: '📈',
+    Gaps: '📊',
     Watchlist: '★',
   };
   return (
@@ -55,7 +56,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Scanner" component={ScannerScreen} options={{ title: 'Scanner' }} />
-      <Tab.Screen name="Historical" component={HistoricalScreen} options={{ title: 'History' }} />
+      <Tab.Screen name="Gaps" component={GapViewerScreen} options={{ title: 'Gaps' }} />
       <Tab.Screen name="Watchlist" component={WatchlistScreen} options={{ title: 'Watchlist' }} />
     </Tab.Navigator>
   );
@@ -72,16 +73,17 @@ export function AppNavigator() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen
-          name="MainTabs"
-          component={MainTabs}
-          options={{ headerShown: false }}
-        />
+        <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
         <Stack.Screen
           name="StockDetail"
           component={StockDetailScreen}
+          options={({ route }) => ({ title: route.params.symbol, headerBackTitle: 'Back' })}
+        />
+        <Stack.Screen
+          name="GapDay"
+          component={GapDayScreen}
           options={({ route }) => ({
-            title: route.params.symbol,
+            title: `${route.params.symbol} ${route.params.date}`,
             headerBackTitle: 'Back',
           })}
         />

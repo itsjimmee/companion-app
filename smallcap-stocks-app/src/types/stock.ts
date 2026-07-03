@@ -1,4 +1,4 @@
-export type TimeRange = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y';
+export type TimeRange = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y';
 
 export interface StockQuote {
   symbol: string;
@@ -12,6 +12,7 @@ export interface StockQuote {
   previousClose: number;
   volume: number;
   marketCap?: number;
+  floatShares?: number;
   timestamp: number;
 }
 
@@ -22,37 +23,88 @@ export interface CandleData {
   lows: number[];
   closes: number[];
   volumes: number[];
+  vwaps?: number[];
 }
 
 export interface ScannerFilter {
   minPrice: number;
   maxPrice: number;
+  minGapPercent: number;
   minChangePercent: number;
   minVolume: number;
-  sortBy: 'changePercent' | 'volume' | 'price';
+  maxMarketCap: number;
+  sortBy: 'gapPercent' | 'changePercent' | 'volume' | 'price';
   sortDirection: 'asc' | 'desc';
 }
 
 export interface ScannerResult extends StockQuote {
+  gapPercent: number;
   relativeVolume?: number;
-  gapPercent?: number;
+  dollarVolume?: number;
+}
+
+export interface GapDayRow {
+  date: string;
+  volume: number;
+  premarketVolume?: number;
+  gapPercent: number;
+  marketOpen?: number;
+  marketClose?: number;
+  closedOverVwap?: boolean;
+  filingTypes?: string;
+  tags?: string;
+}
+
+export interface PremarketRow {
+  date: string;
+  percentageGain: number;
+  spikeDurationMinutes?: number;
+  premarketDollarVolume?: number;
+  closedOverVwap?: boolean;
+  gapped?: boolean;
+  filingTypes?: string;
+  tags?: string;
+}
+
+export interface AfterhoursRow {
+  date: string;
+  percentageGain: number;
+  spikeDurationMinutes?: number;
+  afterhoursDollarVolume?: number;
+  closedOverVwap?: boolean;
+  gapped?: boolean;
+  filingTypes?: string;
+  tags?: string;
+}
+
+export interface IntradayChartPayload {
+  title: string;
+  candles: { time: number; open: number; high: number; low: number; close: number }[];
+  volume: { time: number; value: number; color: string }[];
+  vwap: { time: number; value: number }[];
+  labels: Record<string, string>;
+  eventLines: { time: number; label: string; color: string }[];
+  extendedRanges: { start: number; end: number; label: string }[];
 }
 
 export const DEFAULT_SCANNER_FILTER: ScannerFilter = {
   minPrice: 1,
   maxPrice: 50,
+  minGapPercent: 5,
   minChangePercent: 2,
   minVolume: 500_000,
-  sortBy: 'changePercent',
+  maxMarketCap: 2_000_000_000,
+  sortBy: 'gapPercent',
   sortDirection: 'desc',
 };
 
-export const TIME_RANGE_TO_RESOLUTION: Record<TimeRange, { resolution: string; days: number }> = {
-  '1D': { resolution: '5', days: 1 },
-  '1W': { resolution: '15', days: 7 },
-  '1M': { resolution: '60', days: 30 },
-  '3M': { resolution: 'D', days: 90 },
-  '6M': { resolution: 'D', days: 180 },
-  '1Y': { resolution: 'D', days: 365 },
-  '5Y': { resolution: 'W', days: 365 * 5 },
+export const TIME_RANGE_TO_POLYGON: Record<TimeRange, { multiplier: number; timespan: string; days: number }> = {
+  '1D': { multiplier: 5, timespan: 'minute', days: 1 },
+  '1W': { multiplier: 15, timespan: 'minute', days: 7 },
+  '1M': { multiplier: 1, timespan: 'hour', days: 30 },
+  '3M': { multiplier: 1, timespan: 'day', days: 90 },
+  '6M': { multiplier: 1, timespan: 'day', days: 180 },
+  '1Y': { multiplier: 1, timespan: 'day', days: 365 },
 };
+
+export type GapViewerTab = 'gaps' | 'premarket' | 'afterhours';

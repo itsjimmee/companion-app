@@ -1,23 +1,18 @@
 import { useState } from 'react';
-import {
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScannerFilters } from '../components/ScannerFilters';
-import { StockCard } from '../components/StockCard';
+import { TickerCard } from '../components/TickerCard';
 import { LoadingView } from '../components/LoadingView';
+import { hasPolygonKey } from '../constants/apiKeys';
 import { colors, spacing } from '../constants/theme';
 import { useScanner } from '../hooks/useScanner';
+import { isDemoMode } from '../services/polygonApi';
 import { DEFAULT_SCANNER_FILTER } from '../types/stock';
-import { isDemoMode } from '../services/stockApi';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
 
 type Props = CompositeScreenProps<
@@ -27,11 +22,10 @@ type Props = CompositeScreenProps<
 
 export function ScannerScreen({ navigation }: Props) {
   const [filter, setFilter] = useState(DEFAULT_SCANNER_FILTER);
-  const { results, loading, refreshing, error, realtimeConnected, lastUpdated, refresh } =
-    useScanner({ filter });
+  const { results, loading, refreshing, error, lastUpdated, refresh } = useScanner(filter);
 
   if (loading && !refreshing) {
-    return <LoadingView message="Scanning small caps..." />;
+    return <LoadingView message="Scanning Polygon grouped daily gaps..." />;
   }
 
   return (
@@ -39,12 +33,12 @@ export function ScannerScreen({ navigation }: Props) {
       <LinearGradient colors={[colors.surface, colors.background]} style={styles.header}>
         <Text style={styles.title}>Small Cap Scanner</Text>
         <View style={styles.statusRow}>
-          <View style={[styles.dot, realtimeConnected ? styles.dotLive : styles.dotIdle]} />
+          <View style={[styles.dot, hasPolygonKey() ? styles.dotLive : styles.dotIdle]} />
           <Text style={styles.statusText}>
-            {realtimeConnected ? 'Live' : 'Polling'}
+            {hasPolygonKey() ? 'Polygon Live' : 'Demo'}
             {lastUpdated ? ` · ${lastUpdated.toLocaleTimeString()}` : ''}
           </Text>
-          {isDemoMode() && <Text style={styles.demoBadge}>DEMO</Text>}
+          {isDemoMode() && <Text style={styles.demoBadge}>NO KEY</Text>}
         </View>
       </LinearGradient>
 
@@ -65,18 +59,19 @@ export function ScannerScreen({ navigation }: Props) {
         }
         ListHeaderComponent={
           <Text style={styles.resultCount}>
-            {results.length} match{results.length !== 1 ? 'es' : ''} · {filter.minChangePercent}%+ move · Vol {filter.minVolume / 1000}K+
+            {results.length} gappers · Gap {filter.minGapPercent}%+ · ${filter.minPrice}–${filter.maxPrice}
           </Text>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>No matches</Text>
-            <Text style={styles.emptySubtitle}>Try lowering your filter thresholds</Text>
+            <Text style={styles.emptySubtitle}>Lower gap % or volume thresholds</Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <StockCard
+        renderItem={({ item, index }) => (
+          <TickerCard
             quote={item}
+            rank={index + 1}
             onPress={() =>
               navigation.navigate('StockDetail', {
                 symbol: item.symbol,
@@ -91,41 +86,14 @@ export function ScannerScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-    gap: spacing.sm,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dotLive: {
-    backgroundColor: colors.success,
-  },
-  dotIdle: {
-    backgroundColor: colors.warning,
-  },
-  statusText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  header: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  title: { color: colors.text, fontSize: 28, fontWeight: '700' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs, gap: spacing.sm },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  dotLive: { backgroundColor: colors.success },
+  dotIdle: { backgroundColor: colors.warning },
+  statusText: { color: colors.textSecondary, fontSize: 13 },
   demoBadge: {
     backgroundColor: colors.warning,
     color: colors.background,
@@ -136,37 +104,16 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
   },
-  list: {
-    padding: spacing.md,
-    gap: spacing.sm,
-    paddingBottom: spacing.xl,
-  },
-  resultCount: {
-    color: colors.textMuted,
-    fontSize: 13,
-    marginBottom: spacing.sm,
-  },
+  list: { padding: spacing.md, gap: spacing.sm, paddingBottom: spacing.xl },
+  resultCount: { color: colors.textMuted, fontSize: 13, marginBottom: spacing.sm },
   errorBox: {
     marginHorizontal: spacing.md,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(239,68,68,0.15)',
     borderRadius: 10,
     padding: spacing.sm,
   },
-  errorText: {
-    color: colors.danger,
-    fontSize: 13,
-  },
-  empty: {
-    alignItems: 'center',
-    paddingTop: spacing.xl * 2,
-  },
-  emptyTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  emptySubtitle: {
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
+  errorText: { color: colors.danger, fontSize: 13 },
+  empty: { alignItems: 'center', paddingTop: spacing.xl * 2 },
+  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
+  emptySubtitle: { color: colors.textSecondary, marginTop: spacing.xs },
 });

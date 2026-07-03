@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchCandles } from '../services/stockApi';
-import { CandleData, TimeRange } from '../types/stock';
+import { fetchCandles } from '../services/polygonApi';
+import { CandleData, TIME_RANGE_TO_POLYGON, TimeRange } from '../types/stock';
 
 export function useHistoricalData(symbol: string, range: TimeRange) {
   const [data, setData] = useState<CandleData | null>(null);
@@ -11,7 +11,8 @@ export function useHistoricalData(symbol: string, range: TimeRange) {
     try {
       setLoading(true);
       setError(null);
-      const candles = await fetchCandles(symbol, range);
+      const { multiplier, timespan, days } = TIME_RANGE_TO_POLYGON[range];
+      const candles = await fetchCandles(symbol, multiplier, timespan, days);
       setData(candles);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load historical data');

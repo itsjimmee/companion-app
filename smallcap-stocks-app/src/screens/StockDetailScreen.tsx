@@ -1,20 +1,13 @@
 import { useEffect, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PriceChart } from '../components/PriceChart';
 import { LoadingView } from '../components/LoadingView';
 import { colors, spacing } from '../constants/theme';
-import { getSymbolInfo } from '../constants/smallCapUniverse';
 import { useWatchlist } from '../context/WatchlistContext';
 import { useHistoricalData } from '../hooks/useHistoricalData';
-import { fetchQuote, isDemoMode } from '../services/stockApi';
+import { fetchQuote, isDemoMode } from '../services/polygonApi';
 import { TimeRange } from '../types/stock';
 import {
   formatChange,
@@ -27,7 +20,7 @@ import { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StockDetail'>;
 
-const TIME_RANGES: TimeRange[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y'];
+const TIME_RANGES: TimeRange[] = ['1D', '1W', '1M', '3M', '6M', '1Y'];
 
 export function StockDetailScreen({ route, navigation }: Props) {
   const { symbol, name } = route.params;
@@ -37,8 +30,10 @@ export function StockDetailScreen({ route, navigation }: Props) {
   const { isInWatchlist, toggleWatchlist } = useWatchlist();
   const { data, loading: chartLoading, error: chartError } = useHistoricalData(symbol, range);
 
-  const info = getSymbolInfo(symbol);
   const inWatchlist = isInWatchlist(symbol);
+  const gapPercent = quote?.previousClose
+    ? ((quote.open - quote.previousClose) / quote.previousClose) * 100
+    : 0;
 
   useEffect(() => {
     setQuoteLoading(true);
@@ -47,9 +42,7 @@ export function StockDetailScreen({ route, navigation }: Props) {
       .finally(() => setQuoteLoading(false));
   }, [symbol]);
 
-  if (quoteLoading) {
-    return <LoadingView message={`Loading ${symbol}...`} />;
-  }
+  if (quoteLoading) return <LoadingView message={`Loading ${symbol}...`} />;
 
   const isPositive = (quote?.changePercent ?? 0) >= 0;
   const changeColor = isPositive ? colors.success : colors.danger;
@@ -60,19 +53,28 @@ export function StockDetailScreen({ route, navigation }: Props) {
         <View style={styles.header}>
           <View>
             <Text style={styles.symbol}>{symbol}</Text>
-            <Text style={styles.name}>{name || info?.name}</Text>
-            {info?.sector && <Text style={styles.sector}>{info.sector}</Text>}
+            <Text style={styles.name}>{name || quote?.name}</Text>
           </View>
-          <Pressable onPress={() => toggleWatchlist(symbol)} style={styles.starButton}>
-            <Text style={[styles.star, inWatchlist && styles.starActive]}>
-              {inWatchlist ? '★' : '☆'}
-            </Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={() =>
+                navigation.navigate('GapDay', { symbol, date: new Date().toISOString().slice(0, 10) })
+              }
+              style={styles.chartBtn}
+            >
+              <Text style={styles.chartBtnText}>Gap Chart</Text>
+            </Pressable>
+            <Pressable onPress={() => toggleWatchlist(symbol)} style={styles.starButton}>
+              <Text style={[styles.star, inWatchlist && styles.starActive]}>
+                {inWatchlist ? '★' : '☆'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         {isDemoMode() && (
           <View style={styles.demoBanner}>
-            <Text style={styles.demoText}>Demo mode — add EXPO_PUBLIC_FINNHUB_API_KEY for live data</Text>
+            <Text style={styles.demoText}>Demo mode — add EXPO_PUBLIC_POLYGON_API_KEY for live Polygon data</Text>
           </View>
         )}
 
@@ -81,6 +83,7 @@ export function StockDetailScreen({ route, navigation }: Props) {
           <Text style={[styles.change, { color: changeColor }]}>
             {formatChange(quote?.change ?? 0)} ({formatPercent(quote?.changePercent ?? 0)})
           </Text>
+          <Text style={styles.gap}>Gap {formatPercent(gapPercent)}</Text>
         </View>
 
         <View style={styles.statsGrid}>
@@ -88,9 +91,7 @@ export function StockDetailScreen({ route, navigation }: Props) {
           <Stat label="High" value={formatPrice(quote?.high ?? 0)} />
           <Stat label="Low" value={formatPrice(quote?.low ?? 0)} />
           <Stat label="Volume" value={formatVolume(quote?.volume ?? 0)} />
-          {quote?.marketCap ? (
-            <Stat label="Mkt Cap" value={formatMarketCap(quote.marketCap)} />
-          ) : null}
+          {quote?.marketCap ? <Stat label="Mkt Cap" value={formatMarketCap(quote.marketCap)} /> : null}
         </View>
 
         <View style={styles.rangeSelector}>
@@ -129,75 +130,33 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xl },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  symbol: { color: colors.text, fontSize: 32, fontWeight: '800', letterSpacing: 1 },
+  name: { color: colors.textSecondary, fontSize: 16, marginTop: 2 },
+  chartBtn: {
+    backgroundColor: '#00d4aa',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  content: {
-    padding: spacing.md,
-    gap: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  symbol: {
-    color: colors.text,
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  name: {
-    color: colors.textSecondary,
-    fontSize: 16,
-    marginTop: 2,
-  },
-  sector: {
-    color: colors.primary,
-    fontSize: 13,
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  starButton: {
-    padding: spacing.sm,
-  },
-  star: {
-    fontSize: 28,
-    color: colors.textMuted,
-  },
-  starActive: {
-    color: colors.warning,
-  },
+  chartBtnText: { color: '#1a1a2e', fontWeight: '700', fontSize: 12 },
+  starButton: { padding: spacing.sm },
+  star: { fontSize: 28, color: colors.textMuted },
+  starActive: { color: colors.warning },
   demoBanner: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    backgroundColor: 'rgba(245,158,11,0.15)',
     borderRadius: 10,
     padding: spacing.sm,
   },
-  demoText: {
-    color: colors.warning,
-    fontSize: 12,
-  },
-  priceSection: {
-    gap: 4,
-  },
-  price: {
-    color: colors.text,
-    fontSize: 40,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  change: {
-    fontSize: 18,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
+  demoText: { color: colors.warning, fontSize: 12 },
+  priceSection: { gap: 4 },
+  price: { color: colors.text, fontSize: 40, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  change: { fontSize: 18, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  gap: { color: '#00d4aa', fontSize: 15, fontWeight: '600' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   stat: {
     backgroundColor: colors.surface,
     borderRadius: 12,
@@ -220,11 +179,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontVariant: ['tabular-nums'],
   },
-  rangeSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
+  rangeSelector: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   rangeChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -233,25 +188,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  rangeChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  rangeText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  rangeTextActive: {
-    color: colors.text,
-  },
+  rangeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  rangeText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  rangeTextActive: { color: colors.text },
   errorBox: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(239,68,68,0.15)',
     borderRadius: 10,
     padding: spacing.md,
   },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-  },
+  errorText: { color: colors.danger, fontSize: 14 },
 });

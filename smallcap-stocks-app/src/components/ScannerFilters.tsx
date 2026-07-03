@@ -36,13 +36,18 @@ export function ScannerFilters({ filter, onChange }: ScannerFiltersProps) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
       <FilterInput
-        label="Min %"
+        label="Min Gap %"
+        value={String(filter.minGapPercent)}
+        onChangeText={(v) => update({ minGapPercent: Number(v) || 0 })}
+      />
+      <FilterInput
+        label="Min Chg %"
         value={String(filter.minChangePercent)}
         onChangeText={(v) => update({ minChangePercent: Number(v) || 0 })}
       />
       <FilterInput
         label="Min Vol"
-        value={String(filter.minVolume / 1000) + 'K'}
+        value={String(Math.round(filter.minVolume / 1000)) + 'K'}
         onChangeText={(v) => update({ minVolume: (Number(v.replace(/\D/g, '')) || 0) * 1000 })}
       />
       <FilterInput
@@ -58,13 +63,13 @@ export function ScannerFilters({ filter, onChange }: ScannerFiltersProps) {
       <View style={styles.sortGroup}>
         <Text style={styles.label}>Sort</Text>
         <View style={styles.sortButtons}>
-          {(['changePercent', 'volume', 'price'] as const).map((key) => (
+          {(['gapPercent', 'changePercent', 'volume'] as const).map((key) => (
             <Text
               key={key}
               style={[styles.sortChip, filter.sortBy === key && styles.sortChipActive]}
               onPress={() => update({ sortBy: key })}
             >
-              {key === 'changePercent' ? '%' : key === 'volume' ? 'Vol' : '$'}
+              {key === 'gapPercent' ? 'Gap' : key === 'changePercent' ? '%' : 'Vol'}
             </Text>
           ))}
         </View>
@@ -74,14 +79,8 @@ export function ScannerFilters({ filter, onChange }: ScannerFiltersProps) {
 }
 
 const styles = StyleSheet.create({
-  row: {
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  inputGroup: {
-    minWidth: 72,
-  },
+  row: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  inputGroup: { minWidth: 72 },
   label: {
     color: colors.textMuted,
     fontSize: 11,
@@ -100,13 +99,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minWidth: 72,
   },
-  sortGroup: {
-    justifyContent: 'flex-end',
-  },
-  sortButtons: {
-    flexDirection: 'row',
-    gap: 6,
-  },
+  sortGroup: { justifyContent: 'flex-end' },
+  sortButtons: { flexDirection: 'row', gap: 6 },
   sortChip: {
     backgroundColor: colors.surfaceElevated,
     color: colors.textSecondary,

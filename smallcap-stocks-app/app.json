@@ -34,7 +34,8 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "finnhubApiKey": ""
+      "polygonApiKey": "",
+      "askedgarApiKey": ""
     }
   }
 }

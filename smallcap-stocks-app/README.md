@@ -1,70 +1,82 @@
 # SmallCap Scanner — iPhone App
 
-A React Native (Expo) iOS app for monitoring **small-cap US stocks** with real-time scanning and historical price charts.
+React Native (Expo) iOS app for **small-cap stock scanning** and **historical gap chart viewing**, powered by **Polygon.io** (ported from Ticker Card GUI V08 + historical-gap-chart-viewer).
 
 ## Features
 
-- **Real-Time Scanner** — Filters 30+ small-cap tickers by % change, volume, and price range with live WebSocket updates
-- **Historical Data** — Interactive price charts across 1D, 1W, 1M, 3M, 6M, 1Y, and 5Y timeframes
-- **Stock Detail** — Quote stats, market cap, OHLCV data, and chart visualization
-- **Watchlist** — Save favorites locally with AsyncStorage
-- **Demo Mode** — Works out of the box with simulated data (no API key required)
+### Scanner (Ticker V08 style)
+- **Polygon grouped-daily gap scanner** — scans the full US market for gap-ups/gap-downs
+- **V08-style ticker cards** — gap %, relative volume, market cap, OHLCV footer
+- Filters: min gap %, change %, volume, price range ($1–$50 default)
+- Small-cap market cap filter (default &lt; $2B)
 
-## Quick Start
+### Gap Chart Viewer (historical-gap-chart-viewer)
+- **Gaps / Premarket / After Hours** tabs per ticker
+- **Intraday 3-min candle charts** with VWAP, session overlays (premarket, AH)
+- TradingView Lightweight Charts via WebView
+- AskEdgar integration for rich gap stats (optional)
+- Polygon fallback: computes gap days from daily bars
+
+### Stock Detail + Watchlist
+- Polygon snapshot quotes
+- Historical price charts (1D–1Y)
+- Jump to gap-day intraday chart
+- Persistent watchlist
+
+## Setup
 
 ```bash
 cd smallcap-stocks-app
 npm install
+```
+
+Add your Polygon API key (same key from `Ticker Card GUI V08.py`):
+
+```bash
+# .env
+EXPO_PUBLIC_POLYGON_API_KEY=your_polygon_key_here
+
+# Optional — for AskEdgar gap/premarket/afterhours tables
+EXPO_PUBLIC_ASKEDGAR_API_KEY=your_askedgar_key_here
+```
+
+Or set in `app.json` → `extra.polygonApiKey`.
+
+```bash
 npm start
 ```
 
-Press `i` to open in the iOS Simulator (requires macOS + Xcode), or scan the QR code with **Expo Go** on your iPhone.
+Scan QR with **Expo Go 54** on iPhone.
 
-## Live Market Data
-
-For real-time quotes and historical candles, get a free API key from [Finnhub](https://finnhub.io/) and create a `.env` file:
-
-```bash
-EXPO_PUBLIC_FINNHUB_API_KEY=your_api_key_here
-```
-
-Restart the Expo dev server after adding the key.
-
-## Building for iPhone (App Store)
-
-```bash
-# Install EAS CLI
-npm install -g eas-cli
-
-# Configure and build
-eas build:configure
-eas build --platform ios
-```
-
-You'll need an Apple Developer account ($99/year) to distribute via TestFlight or the App Store.
-
-## Small Cap Universe
-
-The scanner monitors a curated list of actively traded US small caps (approx. $300M–$2B market cap) including SOFI, PLUG, RKLB, IONQ, SOUN, and more. Edit `src/constants/smallCapUniverse.ts` to customize the ticker list.
-
-## Project Structure
+## Architecture
 
 ```
 src/
-  components/     # StockCard, PriceChart, ScannerFilters
-  constants/      # Theme, small-cap ticker universe
-  context/        # Watchlist state
-  hooks/          # useScanner, useHistoricalData
-  navigation/     # Tab + stack navigation
-  screens/        # Scanner, Historical, Watchlist, Detail
-  services/       # Finnhub API + demo data
-  types/          # TypeScript interfaces
-  utils/          # Formatting helpers
+  services/
+    polygonApi.ts       # Polygon REST (snapshots, aggs, grouped daily)
+    scannerService.ts     # Gap scanner (JLEAK grouped-daily logic)
+    gapStatsService.ts    # Gap/premarket/AH stats (AskEdgar + Polygon)
+    gapChartService.ts    # Intraday chart prep (historical_charts.py port)
+  components/
+    TickerCard.tsx        # V08-style rich ticker card
+    GapDayChart.tsx       # TradingView WebView chart
+  screens/
+    ScannerScreen.tsx     # Market-wide gap scanner
+    GapViewerScreen.tsx   # Per-ticker gap history
+    GapDayScreen.tsx      # Single-day intraday chart
 ```
 
-## Tech Stack
+## Data Sources
 
-- Expo SDK 57 / React Native
-- React Navigation (tabs + native stack)
-- react-native-chart-kit for price charts
-- Finnhub API (quotes, candles, WebSocket trades)
+| Feature | API |
+|---------|-----|
+| Scanner | Polygon `/v2/aggs/grouped/locale/us/market/stocks/{date}` |
+| Live quotes | Polygon `/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}` |
+| Intraday charts | Polygon `/v2/aggs/ticker/{sym}/range/3/minute/...` |
+| Gap stats (rich) | AskEdgar `gap-stats`, `premarket-stats`, `afterhours-stats` |
+| Gap stats (fallback) | Computed from Polygon daily bars |
+
+## Reference Projects Ported
+
+- `Polygon/Working Code/Ticker Card GUI V08.py` → TickerCard UI + Polygon scanner
+- `historical-gap-chart-viewer-public` → Gap tabs, intraday VWAP charts, gap % color coding
