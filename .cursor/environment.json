@@ -1,0 +1,4 @@
+{
+  "install": "cd smallcap-stocks-app && npm install && bash scripts/setup-reference-repos.sh",
+  "start": "cd smallcap-stocks-app && node scripts/verify-polygon.mjs || true"
+}
