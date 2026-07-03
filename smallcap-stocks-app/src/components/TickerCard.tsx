@@ -15,9 +15,26 @@ interface TickerCardProps {
 export function TickerCard({ quote, onPress, rank, scanType = 'gaps' }: TickerCardProps) {
   const isPositive = quote.changePercent >= 0;
   const changeColor = isPositive ? colors.success : colors.danger;
-  const gapClass = gapColorClass(quote.gapPercent);
+  const displayMove = quote.percentageGain ?? quote.gapPercent;
+  const gapClass = gapColorClass(displayMove);
   const gapColor =
     gapClass === 'green' ? colors.success : gapClass === 'yellow' ? colors.warning : '#ff9100';
+
+  const moveLabel =
+    scanType === 'premarket' || scanType === 'afterhours'
+      ? 'Gain'
+      : scanType === 'intraday'
+        ? 'Run'
+        : scanType === 'day2'
+          ? 'D2 Run'
+          : 'HOD Push';
+
+  const moveValue =
+    scanType === 'premarket' || scanType === 'afterhours'
+      ? quote.percentageGain
+      : scanType === 'intraday' || scanType === 'day2'
+        ? quote.intradayRunPct
+        : quote.hodPushPct;
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
@@ -37,10 +54,8 @@ export function TickerCard({ quote, onPress, rank, scanType = 'gaps' }: TickerCa
 
       <View style={styles.metricsRow}>
         <Metric label="Gap" value={formatPercent(quote.gapPercent)} color={gapColor} />
-        {scanType === 'intraday' && quote.intradayRunPct != null ? (
-          <Metric label="Run" value={formatPercent(quote.intradayRunPct)} color={colors.success} />
-        ) : quote.hodPushPct != null ? (
-          <Metric label="HOD Push" value={formatPercent(quote.hodPushPct)} color={colors.primary} />
+        {moveValue != null ? (
+          <Metric label={moveLabel} value={formatPercent(moveValue)} color={colors.primary} />
         ) : null}
         <Metric label="Vol" value={formatVolume(quote.volume)} />
         {quote.closedOverVwap != null && (
@@ -56,6 +71,11 @@ export function TickerCard({ quote, onPress, rank, scanType = 'gaps' }: TickerCa
         {quote.marketCap != null && (
           <Metric label="Mkt Cap" value={formatMarketCap(quote.marketCap)} />
         )}
+        {scanType === 'day2' && quote.day1RunPct != null && (
+          <Metric label="D1 Run" value={formatPercent(quote.day1RunPct)} color={colors.warning} />
+        )}
+        {quote.isPopDrop && <Metric label="Pop" value="Drop" color={colors.danger} />}
+        {quote.pmhBreak && <Metric label="PMH" value="Break" color={colors.success} />}
       </View>
 
       <View style={styles.footerRow}>

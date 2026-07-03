@@ -88,4 +88,4 @@ src/
 | Ticker Card GUI V08 | [itsjimmee/ticker-card-gui](https://github.com/itsjimmee/ticker-card-gui) (private) | TickerCard UI, market scanner |
 | Gap chart viewer | [itsjimmee/historical-gap-chart-viewer-public](https://github.com/itsjimmee/historical-gap-chart-viewer-public) | `polygon_scan.py`, `ticker_overview.py`, gap tabs, intraday charts |
 
-Minute-bar premarket/afterhours scans and backtest engine remain desktop-only; mobile uses daily-bar approximations where noted.
+Minute-bar premarket/afterhours scans use 15-minute Polygon bars (mobile caps: 120 AH candidates, 8 parallel workers). Day-2 LHF scan ported from `polygon_scan._scan_day2`.

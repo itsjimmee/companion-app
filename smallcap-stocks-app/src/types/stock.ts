@@ -44,12 +44,36 @@ export interface ScannerResult extends StockQuote {
   hodPushPct?: number;
   scanMovePct?: number;
   intradayRunPct?: number;
+  percentageGain?: number;
   openToClosePct?: number;
   openToLowPct?: number;
   highToClosePct?: number;
   closedOverVwap?: boolean;
   closeVsVwapPct?: number;
   isPopDrop?: boolean;
+  isAhPopDrop?: boolean;
+  isPmGapper?: boolean;
+  pmVolume?: number;
+  premarketVolume?: number;
+  premarketDollarVolume?: number;
+  ahVolume?: number;
+  afterhoursVolume?: number;
+  afterhoursDollarVolume?: number;
+  pmHighVsPrevPct?: number;
+  pmFadeToOpenPct?: number;
+  ahHighVsClosePct?: number;
+  pmhBreak?: boolean;
+  hodCollapsePct?: number;
+  day1Date?: string;
+  day1GapPct?: number;
+  day1RunPct?: number;
+  day1Open?: number;
+  day1Close?: number;
+  day0GapPct?: number;
+  day0RunPct?: number;
+  day3GapPct?: number;
+  day3RunPct?: number;
+  isDay2PopDrop?: boolean;
 }
 
 export interface GapDayRow {

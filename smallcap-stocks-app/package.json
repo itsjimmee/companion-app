@@ -31,7 +31,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "verify:polygon": "node scripts/verify-polygon.mjs"
+    "verify:polygon": "node scripts/verify-polygon.mjs",
+    "verify:scanner": "node scripts/verify-scanner.mjs"
   },
   "private": true
 }

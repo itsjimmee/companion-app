@@ -24,8 +24,9 @@ type Props = CompositeScreenProps<
 const SCAN_TYPES: { key: ScanType; label: string; hint: string }[] = [
   { key: 'gaps', label: 'Gaps', hint: 'Grouped daily gap + HOD push' },
   { key: 'intraday', label: 'Intraday', hint: 'RTH runners ≥5%' },
-  { key: 'premarket', label: 'Premarket', hint: 'Daily coarse (minute scan on desktop)' },
-  { key: 'afterhours', label: 'After Hours', hint: 'Daily coarse (minute scan on desktop)' },
+  { key: 'premarket', label: 'Premarket', hint: 'PM high vs prior close (15m bars)' },
+  { key: 'afterhours', label: 'After Hours', hint: 'AH high vs RTH close (15m bars)' },
+  { key: 'day2', label: 'Day 2', hint: 'Day-1 runners · LHF setup' },
 ];
 
 export function ScannerScreen({ navigation }: Props) {
