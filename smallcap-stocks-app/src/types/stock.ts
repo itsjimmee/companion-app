@@ -41,6 +41,15 @@ export interface ScannerResult extends StockQuote {
   gapPercent: number;
   relativeVolume?: number;
   dollarVolume?: number;
+  hodPushPct?: number;
+  scanMovePct?: number;
+  intradayRunPct?: number;
+  openToClosePct?: number;
+  openToLowPct?: number;
+  highToClosePct?: number;
+  closedOverVwap?: boolean;
+  closeVsVwapPct?: number;
+  isPopDrop?: boolean;
 }
 
 export interface GapDayRow {
@@ -53,6 +62,8 @@ export interface GapDayRow {
   closedOverVwap?: boolean;
   filingTypes?: string;
   tags?: string;
+  dayChangePercent?: number;
+  hodPushPct?: number;
 }
 
 export interface PremarketRow {
@@ -107,4 +118,4 @@ export const TIME_RANGE_TO_POLYGON: Record<TimeRange, { multiplier: number; time
   '1Y': { multiplier: 1, timespan: 'day', days: 365 },
 };
 
-export type GapViewerTab = 'gaps' | 'premarket' | 'afterhours';
+export type GapViewerTab = 'gaps' | 'premarket' | 'afterhours' | 'intraday_runners';

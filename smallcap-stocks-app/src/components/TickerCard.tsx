@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, spacing } from '../constants/theme';
-import { gapColorClass } from '../services/scannerService';
+import { gapColorClass, ScanType } from '../services/scannerService';
 import { ScannerResult } from '../types/stock';
 import { formatChange, formatPercent, formatPrice, formatVolume, formatMarketCap } from '../utils/format';
 
@@ -8,10 +8,11 @@ interface TickerCardProps {
   quote: ScannerResult;
   onPress?: () => void;
   rank?: number;
+  scanType?: ScanType;
 }
 
-/** V08-style ticker card with gap %, volume, and color-coded metrics */
-export function TickerCard({ quote, onPress, rank }: TickerCardProps) {
+/** V08-style ticker card with gap %, HOD push, VWAP, volume */
+export function TickerCard({ quote, onPress, rank, scanType = 'gaps' }: TickerCardProps) {
   const isPositive = quote.changePercent >= 0;
   const changeColor = isPositive ? colors.success : colors.danger;
   const gapClass = gapColorClass(quote.gapPercent);
@@ -36,7 +37,19 @@ export function TickerCard({ quote, onPress, rank }: TickerCardProps) {
 
       <View style={styles.metricsRow}>
         <Metric label="Gap" value={formatPercent(quote.gapPercent)} color={gapColor} />
+        {scanType === 'intraday' && quote.intradayRunPct != null ? (
+          <Metric label="Run" value={formatPercent(quote.intradayRunPct)} color={colors.success} />
+        ) : quote.hodPushPct != null ? (
+          <Metric label="HOD Push" value={formatPercent(quote.hodPushPct)} color={colors.primary} />
+        ) : null}
         <Metric label="Vol" value={formatVolume(quote.volume)} />
+        {quote.closedOverVwap != null && (
+          <Metric
+            label="VWAP"
+            value={quote.closedOverVwap ? 'Above' : 'Below'}
+            color={quote.closedOverVwap ? colors.success : colors.danger}
+          />
+        )}
         {quote.relativeVolume != null && (
           <Metric label="Rel Vol" value={`${quote.relativeVolume.toFixed(1)}x`} />
         )}

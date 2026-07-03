@@ -1,4 +1,4 @@
-import { POLYGON_API_KEY, hasPolygonKey } from '../constants/apiKeys';
+import { POLYGON_ADJUSTED, POLYGON_API_KEY, hasPolygonKey } from '../constants/apiKeys';
 import { CandleData, StockQuote } from '../types/stock';
 
 const POLYGON_BASE = 'https://api.polygon.io';
@@ -46,6 +46,9 @@ export async function polygonFetch<T>(path: string, params: Record<string, strin
   const url = new URL(`${POLYGON_BASE}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   url.searchParams.set('apiKey', POLYGON_API_KEY);
+  if (!params.adjusted && path.includes('/aggs/')) {
+    url.searchParams.set('adjusted', POLYGON_ADJUSTED ? 'true' : 'false');
+  }
 
   const response = await fetch(url.toString());
   const data = (await response.json()) as T & { status?: string; error?: string; message?: string };
@@ -150,7 +153,7 @@ export async function fetchGroupedDaily(date: string): Promise<PolygonGroupedRes
 
   const data = await polygonFetch<{ results?: PolygonGroupedResult[] }>(
     `/v2/aggs/grouped/locale/us/market/stocks/${date}`,
-    { adjusted: 'true' }
+    { adjusted: POLYGON_ADJUSTED ? 'true' : 'false' }
   );
   return data.results ?? [];
 }
@@ -166,7 +169,7 @@ export async function fetchAggs(
 
   const data = await polygonFetch<{ results?: PolygonAgg[] }>(
     `/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`,
-    { adjusted: 'true', sort: 'asc', limit: '50000' }
+    { adjusted: POLYGON_ADJUSTED ? 'true' : 'false', sort: 'asc', limit: '50000' }
   );
   return data.results ?? [];
 }

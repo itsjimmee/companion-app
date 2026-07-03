@@ -1,16 +1,15 @@
 import Constants from 'expo-constants';
 
-/**
- * Polygon API key — set EXPO_PUBLIC_POLYGON_API_KEY, app.json extra.polygonApiKey,
- * or paste your key from Ticker Card GUI V08 below.
- */
+/** Polygon key: Cloud Secrets POLYGON_API_KEY, .env EXPO_PUBLIC_POLYGON_API_KEY, or app.json extra */
 export const POLYGON_API_KEY =
   process.env.EXPO_PUBLIC_POLYGON_API_KEY ||
+  process.env.POLYGON_API_KEY ||
   (Constants.expoConfig?.extra?.polygonApiKey as string | undefined) ||
   '';
 
 export const ASKEDGAR_API_KEY =
   process.env.EXPO_PUBLIC_ASKEDGAR_API_KEY ||
+  process.env.ASKEDGAR_API_KEY ||
   (Constants.expoConfig?.extra?.askedgarApiKey as string | undefined) ||
   '';
 
@@ -21,3 +20,6 @@ export function hasPolygonKey(): boolean {
 export function hasAskEdgarKey(): boolean {
   return Boolean(ASKEDGAR_API_KEY);
 }
+
+/** Match polygon_scan.py — unadjusted OHLC for historical gap study */
+export const POLYGON_ADJUSTED = false;

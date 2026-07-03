@@ -3,6 +3,7 @@ import { GapViewerTab } from '../types/stock';
 import {
   fetchAfterhoursDays,
   fetchGapDays,
+  fetchIntradayRunners,
   fetchPremarketDays,
 } from '../services/gapStatsService';
 
@@ -18,7 +19,8 @@ export function useGapViewer(ticker: string, tab: GapViewerTab) {
       setError(null);
       if (tab === 'gaps') setRows(await fetchGapDays(ticker));
       else if (tab === 'premarket') setRows(await fetchPremarketDays(ticker));
-      else setRows(await fetchAfterhoursDays(ticker));
+      else if (tab === 'afterhours') setRows(await fetchAfterhoursDays(ticker));
+      else setRows(await fetchIntradayRunners(ticker));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
       setRows([]);

@@ -29,6 +29,7 @@ const TABS: { key: GapViewerTab; label: string }[] = [
   { key: 'gaps', label: 'Gaps' },
   { key: 'premarket', label: 'Premarket' },
   { key: 'afterhours', label: 'After Hours' },
+  { key: 'intraday_runners', label: 'Intraday' },
 ];
 
 export function GapViewerScreen({ navigation }: Props) {
@@ -128,11 +129,12 @@ function GapRow({
   tab: GapViewerTab;
   onPress: () => void;
 }) {
-  if (tab === 'gaps') {
+  if (tab === 'gaps' || tab === 'intraday_runners') {
     const row = item as GapDayRow;
     const gapClass = gapColorClass(row.gapPercent);
     const gapColor =
       gapClass === 'green' ? colors.success : gapClass === 'yellow' ? colors.warning : '#ff9100';
+    const runPct = row.hodPushPct;
     return (
       <Pressable style={styles.row} onPress={onPress}>
         <View style={styles.rowLeft}>
@@ -140,7 +142,11 @@ function GapRow({
           <Text style={styles.rowMeta}>Vol {formatVolume(row.volume)}</Text>
         </View>
         <View style={styles.rowRight}>
-          <Text style={[styles.gapPct, { color: gapColor }]}>{formatPercent(row.gapPercent)}</Text>
+          {tab === 'intraday_runners' && runPct != null ? (
+            <Text style={[styles.gapPct, { color: colors.success }]}>Run {formatPercent(runPct)}</Text>
+          ) : (
+            <Text style={[styles.gapPct, { color: gapColor }]}>{formatPercent(row.gapPercent)}</Text>
+          )}
           {row.marketClose != null && (
             <Text style={styles.rowMeta}>Close ${row.marketClose.toFixed(2)}</Text>
           )}

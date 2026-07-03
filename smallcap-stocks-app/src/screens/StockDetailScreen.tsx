@@ -8,6 +8,7 @@ import { colors, spacing } from '../constants/theme';
 import { useWatchlist } from '../context/WatchlistContext';
 import { useHistoricalData } from '../hooks/useHistoricalData';
 import { fetchQuote, isDemoMode } from '../services/polygonApi';
+import { fetchTickerOverview, TickerOverview } from '../services/tickerOverviewService';
 import { TimeRange } from '../types/stock';
 import {
   formatChange,
@@ -26,6 +27,7 @@ export function StockDetailScreen({ route, navigation }: Props) {
   const { symbol, name } = route.params;
   const [range, setRange] = useState<TimeRange>('1M');
   const [quote, setQuote] = useState<Awaited<ReturnType<typeof fetchQuote>> | null>(null);
+  const [overview, setOverview] = useState<TickerOverview | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(true);
   const { isInWatchlist, toggleWatchlist } = useWatchlist();
   const { data, loading: chartLoading, error: chartError } = useHistoricalData(symbol, range);
@@ -37,8 +39,11 @@ export function StockDetailScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     setQuoteLoading(true);
-    fetchQuote(symbol)
-      .then(setQuote)
+    Promise.all([fetchQuote(symbol), fetchTickerOverview(symbol)])
+      .then(([q, ov]) => {
+        setQuote(q);
+        setOverview(ov);
+      })
       .finally(() => setQuoteLoading(false));
   }, [symbol]);
 
@@ -53,7 +58,10 @@ export function StockDetailScreen({ route, navigation }: Props) {
         <View style={styles.header}>
           <View>
             <Text style={styles.symbol}>{symbol}</Text>
-            <Text style={styles.name}>{name || quote?.name}</Text>
+            <Text style={styles.name}>{overview?.profile.name || name || quote?.name}</Text>
+            {overview?.profile.exchange ? (
+              <Text style={styles.exchange}>{overview.profile.exchange}</Text>
+            ) : null}
           </View>
           <View style={styles.headerActions}>
             <Pressable
@@ -91,8 +99,32 @@ export function StockDetailScreen({ route, navigation }: Props) {
           <Stat label="High" value={formatPrice(quote?.high ?? 0)} />
           <Stat label="Low" value={formatPrice(quote?.low ?? 0)} />
           <Stat label="Volume" value={formatVolume(quote?.volume ?? 0)} />
-          {quote?.marketCap ? <Stat label="Mkt Cap" value={formatMarketCap(quote.marketCap)} /> : null}
+          {overview?.display?.marketCap ? (
+            <Stat label="Mkt Cap" value={overview.display.marketCap} />
+          ) : quote?.marketCap ? (
+            <Stat label="Mkt Cap" value={formatMarketCap(quote.marketCap)} />
+          ) : null}
+          {overview?.display?.sharesOutstanding ? (
+            <Stat label="Shares" value={overview.display.sharesOutstanding} />
+          ) : null}
         </View>
+
+        {overview?.returns ? (
+          <View style={styles.returnsRow}>
+            {(['1W', '1M', '3M', '6M', '1Y', 'YTD'] as const).map((key) => {
+              const val = overview.returns?.[key];
+              if (val == null) return null;
+              return (
+                <View key={key} style={styles.returnChip}>
+                  <Text style={styles.returnLabel}>{key}</Text>
+                  <Text style={[styles.returnValue, { color: val >= 0 ? colors.success : colors.danger }]}>
+                    {formatPercent(val)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
 
         <View style={styles.rangeSelector}>
           {TIME_RANGES.map((r) => (
@@ -136,6 +168,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   symbol: { color: colors.text, fontSize: 32, fontWeight: '800', letterSpacing: 1 },
   name: { color: colors.textSecondary, fontSize: 16, marginTop: 2 },
+  exchange: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
   chartBtn: {
     backgroundColor: '#00d4aa',
     paddingHorizontal: 12,
@@ -179,6 +212,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontVariant: ['tabular-nums'],
   },
+  returnsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  returnChip: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 56,
+    alignItems: 'center',
+  },
+  returnLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '600' },
+  returnValue: { fontSize: 13, fontWeight: '700', marginTop: 2, fontVariant: ['tabular-nums'] },
   rangeSelector: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   rangeChip: {
     paddingHorizontal: 14,
