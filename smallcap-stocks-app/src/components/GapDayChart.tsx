@@ -1,8 +1,7 @@
-import { StyleSheet, View } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { useMemo } from 'react';
+import { TradingViewChart } from './TradingViewChart';
 import { buildChartHtml } from '../services/gapChartService';
 import { IntradayChartPayload } from '../types/stock';
-import { colors } from '../constants/theme';
 
 interface GapDayChartProps {
   payload: IntradayChartPayload;
@@ -10,29 +9,8 @@ interface GapDayChartProps {
 }
 
 export function GapDayChart({ payload, height = 520 }: GapDayChartProps) {
-  const html = buildChartHtml(payload);
+  const html = useMemo(() => buildChartHtml(payload), [payload]);
+  const reloadKey = `${payload.title}-${payload.candles.length}-${payload.candles[0]?.time ?? 0}`;
 
-  return (
-    <View style={[styles.container, { height }]}>
-      <WebView
-        originWhitelist={['*']}
-        source={{ html }}
-        style={styles.webview}
-        scrollEnabled={false}
-        javaScriptEnabled
-        domStorageEnabled
-      />
-    </View>
-  );
+  return <TradingViewChart html={html} height={height} reloadKey={reloadKey} />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#131722',
-  },
-  webview: { flex: 1, backgroundColor: 'transparent' },
-});

@@ -145,7 +145,7 @@ export function StockDetailScreen({ route, navigation }: Props) {
             <Text style={styles.errorText}>{chartError}</Text>
           </View>
         ) : data ? (
-          <PriceChart data={data} positive={isPositive} />
+          <PriceChart symbol={symbol} range={range} data={data} />
         ) : null}
       </ScrollView>
     </SafeAreaView>
