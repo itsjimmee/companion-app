@@ -23,6 +23,7 @@ export function PriceChart({ symbol, range, data }: PriceChartProps) {
     <View style={styles.container}>
       <View style={styles.rangeRow}>
         <Text style={styles.rangeLabel}>Low {formatPrice(min)}</Text>
+        <Text style={styles.chartMode}>Candlestick · TradingView</Text>
         <Text style={styles.rangeLabel}>High {formatPrice(max)}</Text>
       </View>
       <TradingViewChart html={html} height={360} reloadKey={reloadKey} />
@@ -41,8 +42,17 @@ const styles = StyleSheet.create({
   },
   rangeRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.xs,
+    gap: spacing.xs,
+  },
+  chartMode: {
+    color: '#26a69a',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   rangeLabel: {
     color: colors.textMuted,
