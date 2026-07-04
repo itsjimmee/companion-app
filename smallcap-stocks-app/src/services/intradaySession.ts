@@ -13,8 +13,9 @@ const AH_END = 20 * 60;
 const SPIKE_THRESHOLD = 1.1;
 
 export const SCAN_SESSION_BAR_MINUTES = 15;
-export const SCAN_SESSION_WORKERS = 8;
-export const SCAN_AH_MAX_CANDIDATES = 120;
+export const SCAN_SESSION_WORKERS = 6;
+export const SCAN_PM_MAX_CANDIDATES = 80;
+export const SCAN_AH_MAX_CANDIDATES = 80;
 
 interface AggBar {
   t: number;
@@ -128,10 +129,56 @@ export async function fetchDayRec(
   const key = cacheKey(sym, dateStr, barMinutes);
   if (dayRecCache.has(key)) return dayRecCache.get(key) ?? null;
 
-  const bars = await fetchAggs(sym, barMinutes, 'minute', dateStr, dateStr);
-  const rec = bars.length ? computeDayRec(bars) : null;
-  dayRecCache.set(key, rec);
-  return rec;
+  try {
+    const bars = await fetchAggs(sym, barMinutes, 'minute', dateStr, dateStr);
+    const rec = bars.length ? computeDayRec(bars) : null;
+    dayRecCache.set(key, rec);
+    return rec;
+  } catch {
+    dayRecCache.set(key, null);
+    return null;
+  }
+}
+
+export async function fetchDayRecordsForRange(
+  ticker: string,
+  from: string,
+  to: string,
+  barMinutes = SCAN_SESSION_BAR_MINUTES
+): Promise<(DayRec & { date: string })[]> {
+  const sym = ticker.toUpperCase();
+  let bars: AggBar[];
+  try {
+    bars = await fetchAggs(sym, barMinutes, 'minute', from.slice(0, 10), to.slice(0, 10));
+  } catch {
+    return [];
+  }
+  if (!bars.length) return [];
+
+  const byDate = new Map<string, AggBar[]>();
+  for (const bar of bars) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(bar.t));
+    const y = parts.find((p) => p.type === 'year')?.value ?? '';
+    const m = parts.find((p) => p.type === 'month')?.value ?? '';
+    const d = parts.find((p) => p.type === 'day')?.value ?? '';
+    const dateStr = `${y}-${m}-${d}`;
+    const list = byDate.get(dateStr) ?? [];
+    list.push(bar);
+    byDate.set(dateStr, list);
+  }
+
+  const records: (DayRec & { date: string })[] = [];
+  for (const [date, dayBars] of byDate) {
+    if (date < from.slice(0, 10) || date > to.slice(0, 10)) continue;
+    records.push({ date, ...computeDayRec(dayBars) });
+  }
+  records.sort((a, b) => a.date.localeCompare(b.date));
+  return records;
 }
 
 export async function runPool<T, R>(
@@ -144,8 +191,12 @@ export async function runPool<T, R>(
   const workers = Array.from({ length: Math.min(concurrency, Math.max(1, items.length)) }, async () => {
     while (index < items.length) {
       const i = index++;
-      const r = await fn(items[i]);
-      if (r != null) results.push(r);
+      try {
+        const r = await fn(items[i]);
+        if (r != null) results.push(r);
+      } catch {
+        // skip failed ticker — don't abort whole scan
+      }
     }
   });
   await Promise.all(workers);

@@ -42,7 +42,9 @@ export function TickerCard({ quote, onPress, rank, scanType = 'gaps' }: TickerCa
         <View style={styles.symbolBlock}>
           {rank != null && <Text style={styles.rank}>#{rank}</Text>}
           <Text style={styles.symbol}>{quote.symbol}</Text>
-          <Text style={styles.name} numberOfLines={1}>{quote.name}</Text>
+          <Text style={styles.name} numberOfLines={1}>
+            {quote.scanDate ? `${quote.scanDate} · ` : ''}{quote.name}
+          </Text>
         </View>
         <View style={styles.priceBlock}>
           <Text style={styles.price}>{formatPrice(quote.price)}</Text>

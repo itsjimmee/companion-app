@@ -14,7 +14,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LoadingView } from '../components/LoadingView';
 import { colors, spacing } from '../constants/theme';
-import { useGapViewer } from '../hooks/useGapViewer';
+import { defaultGapViewerRange, useGapViewer } from '../hooks/useGapViewer';
 import { gapColorClass } from '../services/scannerService';
 import { AfterhoursRow, GapDayRow, GapViewerTab, PremarketRow } from '../types/stock';
 import { formatPercent, formatVolume } from '../utils/format';
@@ -33,10 +33,13 @@ const TABS: { key: GapViewerTab; label: string }[] = [
 ];
 
 export function GapViewerScreen({ navigation }: Props) {
+  const defaultRange = defaultGapViewerRange();
   const [ticker, setTicker] = useState('');
   const [activeTicker, setActiveTicker] = useState('');
   const [tab, setTab] = useState<GapViewerTab>('gaps');
-  const { rows, loading, error, reload } = useGapViewer(activeTicker, tab);
+  const [dateFrom, setDateFrom] = useState(defaultRange.from);
+  const [dateTo, setDateTo] = useState(defaultRange.to);
+  const { rows, loading, error, reload } = useGapViewer(activeTicker, tab, dateFrom, dateTo);
 
   const loadTicker = () => {
     const t = ticker.trim().toUpperCase();
@@ -47,7 +50,7 @@ export function GapViewerScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Gap Chart Viewer</Text>
-        <Text style={styles.subtitle}>Historical gaps, premarket & after-hours — tap a row for intraday chart</Text>
+        <Text style={styles.subtitle}>Minute-bar PM/AH stats · tap a row for intraday chart</Text>
       </View>
 
       <View style={styles.searchRow}>
@@ -64,6 +67,29 @@ export function GapViewerScreen({ navigation }: Props) {
         <Pressable style={styles.loadBtn} onPress={loadTicker}>
           <Text style={styles.loadBtnText}>Load</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.dateRow}>
+        <View style={styles.dateField}>
+          <Text style={styles.dateLabel}>From</Text>
+          <TextInput
+            style={styles.dateInput}
+            value={dateFrom}
+            onChangeText={setDateFrom}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
+        <View style={styles.dateField}>
+          <Text style={styles.dateLabel}>To</Text>
+          <TextInput
+            style={styles.dateInput}
+            value={dateTo}
+            onChangeText={setDateTo}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
       </View>
 
       <View style={styles.tabs}>
@@ -213,6 +239,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadBtnText: { color: '#1a1a2e', fontWeight: '800', fontSize: 15 },
+  dateRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  dateField: { flex: 1 },
+  dateLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 4, textTransform: 'uppercase' },
+  dateInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.text,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
   tabs: { flexDirection: 'row', paddingHorizontal: spacing.md, gap: spacing.sm, marginBottom: spacing.sm },
   tab: {
     paddingHorizontal: 14,

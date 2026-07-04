@@ -4,8 +4,10 @@
  */
 import { ScannerResult } from '../types/stock';
 import { fetchGroupedDaily, formatDate, isDemoMode } from './polygonApi';
+import { iterWeekdays, weekdaysBetween } from '../utils/dates';
 import {
   SCAN_AH_MAX_CANDIDATES,
+  SCAN_PM_MAX_CANDIDATES,
   SCAN_SESSION_WORKERS,
   fetchDayRec,
   runPool,
@@ -26,6 +28,8 @@ export type ScanType = 'gaps' | 'premarket' | 'afterhours' | 'intraday' | 'day2'
 export const SCAN_MIN_PRICE = 0.3;
 export const SCAN_MIN_VOLUME = 30_000;
 export const SCAN_MAX_ROWS = 150;
+export const SCAN_RANGE_MAX_DAYS = 10;
+export const SCAN_RANGE_MAX_ROWS = 300;
 export const SCAN_INTRADAY_COARSE_MIN = 4;
 export const SCAN_AH_COARSE_MIN = 2;
 export const SCAN_AH_COARSE_RANGE_MIN = 4;
@@ -159,7 +163,8 @@ function scanRowSortKey(a: ScannerResult, b: ScannerResult): number {
 function baseRowFromBar(
   ticker: string,
   bar: GroupedBar & { v: number },
-  prevClose?: number | null
+  prevClose?: number | null,
+  scanDate?: string
 ): Omit<ScannerResult, 'gapPercent'> & { gapPercent: number } {
   const { o, h, l, c, v } = bar;
   const gap = prevClose ? ((o! - prevClose) / prevClose) * 100 : 0;
@@ -167,6 +172,7 @@ function baseRowFromBar(
   return {
     symbol: ticker,
     name: ticker,
+    scanDate,
     price: c,
     change: prevClose ? c - prevClose : 0,
     changePercent: prevClose ? ((c - prevClose) / prevClose) * 100 : 0,
@@ -195,7 +201,7 @@ function buildSessionScanRow(
   const { o, h, l, c, v } = bar;
   if (!o || o <= 0 || c == null || c < SCAN_MIN_PRICE || v < SCAN_MIN_VOLUME) return null;
 
-  const row = baseRowFromBar(ticker, bar, prevClose) as ScannerResult;
+  const row = baseRowFromBar(ticker, bar, prevClose, dateStr) as ScannerResult;
   const gap = prevClose ? ((o - prevClose) / prevClose) * 100 : null;
   row.gapPercent = gap ?? 0;
 
@@ -280,6 +286,12 @@ async function scanSessionDay(
   }
 
   let pool = candidates;
+  if (scanType === 'premarket' && pool.length > SCAN_PM_MAX_CANDIDATES) {
+    pool = [...pool]
+      .sort((a, b) => premarketCoarseGainPct(a.bar.o ?? 0, a.prevClose ?? 0) - premarketCoarseGainPct(b.bar.o ?? 0, b.prevClose ?? 0))
+      .reverse()
+      .slice(0, SCAN_PM_MAX_CANDIDATES);
+  }
   if (scanType === 'afterhours' && pool.length > SCAN_AH_MAX_CANDIDATES) {
     pool = [...pool].sort((a, b) => afterhoursCoarseScore(b.bar) - afterhoursCoarseScore(a.bar)).slice(0, SCAN_AH_MAX_CANDIDATES);
   }
@@ -308,7 +320,7 @@ export async function scanDayGaps(dateStr: string, maxRows = SCAN_MAX_ROWS): Pro
     const { o, h, l, c, v } = bar;
     if (!o || o <= 0 || c == null || c < SCAN_MIN_PRICE || v < SCAN_MIN_VOLUME) continue;
 
-    const row = baseRowFromBar(ticker, bar, prevClose) as ScannerResult;
+    const row = baseRowFromBar(ticker, bar, prevClose, dateStr) as ScannerResult;
     const push = o ? ((h! - o) / o) * 100 : 0;
     row.hodPushPct = round2(push);
     row.scanMovePct = row.hodPushPct;
@@ -338,7 +350,7 @@ export async function scanDayIntraday(dateStr: string, maxRows = SCAN_MAX_ROWS):
     if (run < 5) continue;
 
     const gap = prevClose ? ((o - prevClose) / prevClose) * 100 : null;
-    const row = baseRowFromBar(ticker, bar, prevClose) as ScannerResult;
+    const row = baseRowFromBar(ticker, bar, prevClose, dateStr) as ScannerResult;
     row.gapPercent = gap ?? 0;
     row.intradayRunPct = round2(run);
     row.hodPushPct = row.intradayRunPct;
@@ -396,7 +408,7 @@ export async function scanDay2(
     const run = intradayCoarseRunPct(d2Bar.o!, d2Bar.h ?? c, d2Bar.l ?? c, c);
     if (run < 5) continue;
 
-    const row = baseRowFromBar(ticker, d2Bar, d1Close) as ScannerResult;
+    const row = baseRowFromBar(ticker, d2Bar, d1Close, dateStr) as ScannerResult;
     row.gapPercent = d1Close ? ((o - d1Close) / d1Close) * 100 : 0;
     row.intradayRunPct = round2(run);
     row.hodPushPct = row.intradayRunPct;
@@ -433,6 +445,64 @@ export async function scanDay2(
 
   rows.sort(scanRowSortKey);
   return rows.slice(0, maxRows);
+}
+
+function dedupeScanRows(rows: ScannerResult[]): ScannerResult[] {
+  const best = new Map<string, ScannerResult>();
+  const order: string[] = [];
+  for (const r of rows) {
+    const key = `${r.symbol}:${r.scanDate ?? ''}`;
+    const prev = best.get(key);
+    const move = Math.abs(r.scanMovePct ?? r.hodPushPct ?? r.gapPercent ?? 0);
+    const prevMove = prev ? Math.abs(prev.scanMovePct ?? prev.hodPushPct ?? prev.gapPercent ?? 0) : -1;
+    if (!prev) {
+      best.set(key, r);
+      order.push(key);
+    } else if (move > prevMove) {
+      best.set(key, r);
+    }
+  }
+  return order.map((k) => best.get(k)!);
+}
+
+/** scan_range — multi-day market scan */
+export async function scanRange(
+  dateFrom: string,
+  dateTo: string,
+  scanType: ScanType = 'gaps',
+  maxRows = SCAN_RANGE_MAX_ROWS
+): Promise<{ rows: ScannerResult[]; daysScanned: number; error?: string }> {
+  if (isDemoMode()) return { rows: [], daysScanned: 0 };
+
+  const weekdays = weekdaysBetween(dateFrom, dateTo);
+  if (weekdays > SCAN_RANGE_MAX_DAYS) {
+    return {
+      rows: [],
+      daysScanned: 0,
+      error: `Date range too large (${weekdays} weekdays; max ${SCAN_RANGE_MAX_DAYS}). Narrow the range.`,
+    };
+  }
+
+  const perDayCap = Math.max(40, Math.floor(maxRows / Math.max(1, weekdays)));
+  const batches: ScannerResult[][] = [];
+  let daysScanned = 0;
+
+  for (const day of iterWeekdays(dateFrom, dateTo)) {
+    const dayRows = await scanDay(day, scanType, perDayCap);
+    if (dayRows.length) {
+      batches.push(dayRows.map((r) => ({ ...r, scanDate: day })));
+      daysScanned++;
+    }
+  }
+
+  let combined = batches.flat();
+  combined.sort((a, b) => {
+    const dateCmp = (a.scanDate ?? '').localeCompare(b.scanDate ?? '');
+    if (dateCmp !== 0) return dateCmp;
+    return scanRowSortKey(a, b);
+  });
+  combined = dedupeScanRows(combined).slice(0, maxRows);
+  return { rows: combined, daysScanned };
 }
 
 export async function scanDay(

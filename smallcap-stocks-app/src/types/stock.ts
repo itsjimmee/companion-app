@@ -38,6 +38,7 @@ export interface ScannerFilter {
 }
 
 export interface ScannerResult extends StockQuote {
+  scanDate?: string;
   gapPercent: number;
   relativeVolume?: number;
   dollarVolume?: number;

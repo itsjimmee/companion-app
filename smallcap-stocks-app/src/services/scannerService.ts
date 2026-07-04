@@ -1,7 +1,8 @@
 import { DEFAULT_SCANNER_FILTER, ScannerFilter, ScannerResult } from '../types/stock';
-import { ScanType, scanDay } from './polygonScanService';
+import { ScanType, scanDay, scanRange } from './polygonScanService';
 import { fetchTickerDetails, isDemoMode } from './polygonApi';
 import { runPool } from './intradaySession';
+import { resolveScanDates } from '../utils/dates';
 
 function scanMove(result: ScannerResult): number {
   return Math.abs(
@@ -39,9 +40,7 @@ function sortResults(results: ScannerResult[], filter: ScannerFilter): ScannerRe
         return (a.changePercent - b.changePercent) * dir;
       case 'gapPercent':
       default:
-        return (
-          (scanMove(a) - scanMove(b)) * dir
-        );
+        return (scanMove(a) - scanMove(b)) * dir;
     }
   });
 }
@@ -59,19 +58,75 @@ async function enrichMarketCap(results: ScannerResult[], cap = 40): Promise<Scan
   return [...enriched, ...results.slice(cap)];
 }
 
-/** Market scan — polygon_scan.scan_day */
-export async function runGapScanner(
-  scanDate: Date = new Date(),
-  filter: ScannerFilter = DEFAULT_SCANNER_FILTER,
-  scanType: ScanType = 'gaps'
-): Promise<ScannerResult[]> {
-  if (isDemoMode()) return runDemoScanner(filter, scanType);
+export interface RunGapScannerOptions {
+  dateFrom: string;
+  dateTo: string;
+  filter?: ScannerFilter;
+  scanType?: ScanType;
+  signal?: AbortSignal;
+}
 
-  const dateStr = scanDate.toISOString().slice(0, 10);
-  const raw = await scanDay(dateStr, scanType, 200);
+export interface RunGapScannerResult {
+  results: ScannerResult[];
+  rangeNote?: string;
+  daysScanned?: number;
+}
+
+/** Market scan — polygon_scan.scan_day / scan_range */
+export async function runGapScanner(options: RunGapScannerOptions): Promise<RunGapScannerResult> {
+  const {
+    dateFrom,
+    dateTo,
+    filter = DEFAULT_SCANNER_FILTER,
+    scanType = 'gaps',
+    signal,
+  } = options;
+
+  if (signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    throw err;
+  }
+
+  if (isDemoMode()) {
+    return { results: runDemoScanner(filter, scanType) };
+  }
+
+  const resolved = resolveScanDates(dateFrom, dateTo);
+  if (resolved.error) throw new Error(resolved.error);
+
+  const from = resolved.dateFrom;
+  const to = resolved.dateTo;
+  const rangeNote = resolved.adjustmentNote;
+
+  let raw: ScannerResult[] = [];
+  let daysScanned = 1;
+
+  if (from === to) {
+    raw = await scanDay(from, scanType, 200);
+    raw = raw.map((r) => ({ ...r, scanDate: from }));
+  } else {
+    const range = await scanRange(from, to, scanType, 300);
+    if (range.error) throw new Error(range.error);
+    raw = range.rows;
+    daysScanned = range.daysScanned;
+  }
+
+  if (signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    throw err;
+  }
+
   const filtered = raw.filter((r) => passesFilter(r, filter));
   const withCap = await enrichMarketCap(filtered);
-  return sortResults(withCap.filter((r) => passesFilter(r, filter)), filter);
+  const results = sortResults(withCap.filter((r) => passesFilter(r, filter)), filter);
+
+  return {
+    results,
+    rangeNote: rangeNote ?? (daysScanned > 1 ? `${daysScanned} days scanned` : undefined),
+    daysScanned,
+  };
 }
 
 function runDemoScanner(filter: ScannerFilter, scanType: ScanType): ScannerResult[] {
@@ -85,6 +140,7 @@ function runDemoScanner(filter: ScannerFilter, scanType: ScanType): ScannerResul
     return {
       symbol,
       name: symbol,
+      scanDate: '2025-06-27',
       price,
       change: price - prevClose,
       changePercent: ((price - prevClose) / prevClose) * 100,
