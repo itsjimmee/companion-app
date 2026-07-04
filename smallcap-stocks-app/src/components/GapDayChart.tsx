@@ -9,7 +9,7 @@ interface GapDayChartProps {
   height?: number;
 }
 
-export function GapDayChart({ payload, height = 360 }: GapDayChartProps) {
+export function GapDayChart({ payload, height = 520 }: GapDayChartProps) {
   const html = buildChartHtml(payload);
 
   return (
@@ -32,7 +32,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#131722',
   },
   webview: { flex: 1, backgroundColor: 'transparent' },
 });

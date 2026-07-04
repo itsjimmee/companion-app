@@ -131,7 +131,7 @@ export async function buildIntradayChartPayload(
   const volume = bars.map((bar, i) => ({
     time: syntheticTimes[i],
     value: Math.floor(bar.volume),
-    color: bar.close >= bar.open ? '#00e676' : '#ff5252',
+    color: bar.close >= bar.open ? 'rgba(38, 166, 154, 0.55)' : 'rgba(239, 83, 80, 0.55)',
   }));
 
   const vwap = vwaps.map((value, i) => ({
@@ -208,15 +208,24 @@ function round(n: number): number {
 export function buildChartHtml(payload: IntradayChartPayload): string {
   return `<!doctype html>
 <html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<script src="https://unpkg.com/lightweight-charts@5.0.7/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-  html,body{margin:0;height:100%;background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,sans-serif}
-  .header{height:40px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#00d4aa;border-bottom:1px solid #2a2a4a}
-  #chart{height:calc(100% - 40px);width:100%;position:relative}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#131722;color:#d1d4dc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden;touch-action:none}
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;height:44px;padding:0 12px;border-bottom:1px solid #2a2e39;background:#131722}
+  .title{font-size:12px;font-weight:600;color:#d1d4dc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#787b86;font-variant-numeric:tabular-nums}
+  .legend b{color:#d1d4dc;font-weight:600}
+  .legend .up{color:#26a69a}
+  .legend .down{color:#ef5350}
+  #chart{height:calc(100% - 44px);width:100%;position:relative}
   #overlay{position:absolute;inset:0;pointer-events:none;z-index:2}
 </style></head><body>
-<div class="header">${payload.title}</div>
+<div class="toolbar">
+  <div class="title">${payload.title}</div>
+  <div class="legend" id="legend">Tap or drag chart for OHLC</div>
+</div>
 <div id="chart"><canvas id="overlay"></canvas></div>
 <script>
 const candleData=${JSON.stringify(payload.candles)};
@@ -227,36 +236,76 @@ const extendedRanges=${JSON.stringify(payload.extendedRanges)};
 const labels=${JSON.stringify(payload.labels)};
 const container=document.getElementById('chart');
 const overlay=document.getElementById('overlay');
+const legendEl=document.getElementById('legend');
 const ctx=overlay.getContext('2d');
+const TV={bg:'#131722',grid:'#363c4e',border:'#2a2e39',text:'#d1d4dc',up:'#26a69a',down:'#ef5350'};
+function fmt(n){return Number.isFinite(n)?n.toFixed(2):'—'}
+function resizeOverlay(){
+  const w=overlay.clientWidth,h=overlay.clientHeight,dpr=window.devicePixelRatio||1;
+  overlay.width=Math.floor(w*dpr);overlay.height=Math.floor(h*dpr);
+  overlay.style.width=w+'px';overlay.style.height=h+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
 const chart=LightweightCharts.createChart(container,{
-  layout:{background:{type:'solid',color:'#1a1a2e'},textColor:'#e0e0e0'},
-  grid:{vertLines:{color:'#2a2a4a'},horzLines:{color:'#2a2a4a'}},
-  rightPriceScale:{borderColor:'#2a2a4a'},
-  timeScale:{borderColor:'#2a2a4a',timeVisible:true,secondsVisible:false,
+  layout:{background:{type:'solid',color:TV.bg},textColor:TV.text,fontSize:11},
+  grid:{vertLines:{color:TV.grid},horzLines:{color:TV.grid}},
+  rightPriceScale:{borderColor:TV.border,scaleMargins:{top:0.08,bottom:0.22}},
+  timeScale:{borderColor:TV.border,timeVisible:true,secondsVisible:false,rightOffset:6,barSpacing:6,
     tickMarkFormatter:(t)=>labels[String(t)]||''},
-  crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+  localization:{timeFormatter:(t)=>labels[String(t)]||''},
+  crosshair:{
+    mode:LightweightCharts.CrosshairMode.Normal,
+    vertLine:{color:'#758696',width:1,style:LightweightCharts.LineStyle.LargeDashed,labelBackgroundColor:'#363c4e'},
+    horzLine:{color:'#758696',width:1,style:LightweightCharts.LineStyle.LargeDashed,labelBackgroundColor:'#363c4e'}
+  },
+  handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
+  handleScale:{axisPressedMouseMove:true,mouseWheel:true,pinch:true}
 });
 function draw(){
-  const w=overlay.clientWidth,h=overlay.clientHeight,dpr=window.devicePixelRatio||1;
-  overlay.width=w*dpr;overlay.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  resizeOverlay();
+  const w=overlay.clientWidth,h=overlay.clientHeight;
+  ctx.clearRect(0,0,w,h);
   extendedRanges.forEach(r=>{
     const sx=chart.timeScale().timeToCoordinate(r.start),ex=chart.timeScale().timeToCoordinate(r.end);
-    if(sx==null||ex==null)return;ctx.fillStyle='rgba(235,235,235,0.12)';ctx.fillRect(Math.min(sx,ex),0,Math.abs(ex-sx),h);
+    if(sx==null||ex==null)return;
+    const left=Math.max(0,Math.min(sx,ex)),right=Math.min(w,Math.max(sx,ex));
+    if(right<=left)return;
+    ctx.fillStyle='rgba(120,123,134,0.14)';ctx.fillRect(left,0,right-left,h);
   });
   eventLines.forEach(e=>{
-    const x=chart.timeScale().timeToCoordinate(e.time);if(x==null)return;
-    ctx.beginPath();ctx.setLineDash([5,5]);ctx.strokeStyle=e.color;ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();ctx.setLineDash([]);
+    const x=chart.timeScale().timeToCoordinate(e.time);if(x==null||x<0||x>w)return;
+    ctx.beginPath();ctx.setLineDash([6,4]);ctx.strokeStyle=e.color;ctx.lineWidth=1.25;
+    ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();ctx.setLineDash([]);
   });
 }
-const cs=chart.addSeries(LightweightCharts.CandlestickSeries,{upColor:'#00e676',downColor:'#ff5252',borderUpColor:'#00e676',borderDownColor:'#ff5252',wickUpColor:'#111',wickDownColor:'#111'});
+const cs=chart.addSeries(LightweightCharts.CandlestickSeries,{
+  upColor:TV.up,downColor:TV.down,borderUpColor:TV.up,borderDownColor:TV.down,
+  wickUpColor:TV.up,wickDownColor:TV.down
+});
 cs.setData(candleData);
-const vl=chart.addSeries(LightweightCharts.LineSeries,{color:'#0b2aa8',lineWidth:2,priceLineVisible:false});
+const vl=chart.addSeries(LightweightCharts.LineSeries,{color:'#ffffff',lineWidth:2,priceLineVisible:false,lastValueVisible:false});
 vl.setData(vwapData);
-const vol=chart.addSeries(LightweightCharts.HistogramSeries,{priceFormat:{type:'volume'},priceScaleId:'volume',priceLineVisible:false});
+const vol=chart.addSeries(LightweightCharts.HistogramSeries,{priceFormat:{type:'volume'},priceScaleId:'volume',priceLineVisible:false,lastValueVisible:false});
 vol.setData(volumeData);
-chart.priceScale('volume').applyOptions({scaleMargins:{top:0.78,bottom:0}});
+chart.priceScale('volume').applyOptions({scaleMargins:{top:0.82,bottom:0},borderVisible:false});
 chart.timeScale().fitContent();draw();
 chart.timeScale().subscribeVisibleLogicalRangeChange(draw);
-window.addEventListener('resize',()=>{chart.applyOptions({width:container.clientWidth,height:container.clientHeight});draw();});
+chart.subscribeCrosshairMove(param=>{
+  if(!param.time){
+    legendEl.textContent='Tap or drag chart for OHLC';
+    return;
+  }
+  const cd=param.seriesData.get(cs);
+  const vd=param.seriesData.get(vl);
+  if(!cd){legendEl.textContent=labels[String(param.time)]||'';return;}
+  const cls=cd.close>=cd.open?'up':'down';
+  legendEl.innerHTML='O <b class="'+cls+'">'+fmt(cd.open)+'</b> H <b class="'+cls+'">'+fmt(cd.high)+'</b> L <b class="'+cls+'">'+fmt(cd.low)+'</b> C <b class="'+cls+'">'+fmt(cd.close)+'</b>'+(vd&&Number.isFinite(vd.value)?' · VWAP <b>'+fmt(vd.value)+'</b>':'');
+});
+function resizeChart(){
+  chart.applyOptions({width:container.clientWidth,height:container.clientHeight});
+  draw();
+}
+window.addEventListener('resize',resizeChart);
+setTimeout(resizeChart,0);
 </script></body></html>`;
 }

@@ -62,7 +62,7 @@ export function GapDayScreen({ route }: Props) {
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : payload ? (
-          <GapDayChart payload={payload} height={420} />
+          <GapDayChart payload={payload} height={520} />
         ) : null}
       </ScrollView>
     </SafeAreaView>

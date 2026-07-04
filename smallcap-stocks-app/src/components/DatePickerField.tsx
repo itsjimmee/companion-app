@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useMemo, useState } from 'react';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Calendar, DateData } from 'react-native-calendars';
 import { colors, spacing } from '../constants/theme';
 import { formatDateEt, parseIsoDate } from '../utils/dates';
 
@@ -12,7 +12,7 @@ interface DatePickerFieldProps {
   maximumDate?: string;
 }
 
-/** iOS UIDatePicker crashes if value is outside [minimumDate, maximumDate]. */
+/** iOS date pickers crash if value is outside [minimumDate, maximumDate]. */
 function clampDate(date: Date, minimumDate?: string, maximumDate?: string): Date {
   let ms = date.getTime();
   if (minimumDate) ms = Math.max(ms, parseIsoDate(minimumDate).getTime());
@@ -20,87 +20,72 @@ function clampDate(date: Date, minimumDate?: string, maximumDate?: string): Date
   return new Date(ms);
 }
 
+const calendarTheme = {
+  backgroundColor: colors.surface,
+  calendarBackground: colors.surface,
+  textSectionTitleColor: colors.textMuted,
+  selectedDayBackgroundColor: colors.primary,
+  selectedDayTextColor: '#ffffff',
+  todayTextColor: colors.primary,
+  dayTextColor: colors.text,
+  textDisabledColor: '#3d4a66',
+  monthTextColor: colors.text,
+  arrowColor: colors.primary,
+  textDayFontWeight: '600' as const,
+  textMonthFontWeight: '700' as const,
+  textDayHeaderFontWeight: '600' as const,
+};
+
 export function DatePickerField({ label, value, onChange, minimumDate, maximumDate }: DatePickerFieldProps) {
   const [open, setOpen] = useState(false);
   const safeValue = useMemo(
-    () => clampDate(parseIsoDate(value), minimumDate, maximumDate),
+    () => formatDateEt(clampDate(parseIsoDate(value), minimumDate, maximumDate)),
     [value, minimumDate, maximumDate]
   );
-  const [draft, setDraft] = useState(safeValue);
 
-  useEffect(() => {
-    if (!open) setDraft(safeValue);
-  }, [safeValue, open]);
+  const markedDates = useMemo(
+    () => ({
+      [safeValue]: { selected: true, selectedColor: colors.primary },
+    }),
+    [safeValue]
+  );
 
-  const openPicker = () => {
-    setDraft(safeValue);
-    setOpen(true);
-  };
-
-  const commit = (date: Date) => {
-    const clamped = clampDate(date, minimumDate, maximumDate);
-    onChange(formatDateEt(clamped));
+  const onDayPress = (day: DateData) => {
+    const picked = clampDate(parseIsoDate(day.dateString), minimumDate, maximumDate);
+    onChange(formatDateEt(picked));
     setOpen(false);
   };
-
-  const onPickerChange = (_event: DateTimePickerEvent, selected?: Date) => {
-    if (!selected) {
-      if (Platform.OS === 'android') setOpen(false);
-      return;
-    }
-    const clamped = clampDate(selected, minimumDate, maximumDate);
-    setDraft(clamped);
-    if (Platform.OS === 'android') commit(clamped);
-  };
-
-  const minDate = minimumDate ? parseIsoDate(minimumDate) : undefined;
-  const maxDate = maximumDate ? parseIsoDate(maximumDate) : undefined;
 
   return (
     <View style={styles.wrap}>
       <Text style={styles.label}>{label}</Text>
-      <Pressable style={styles.field} onPress={openPicker}>
-        <Text style={styles.value}>{value}</Text>
+      <Pressable style={styles.field} onPress={() => setOpen(true)}>
+        <Text style={styles.value}>{safeValue}</Text>
         <Text style={styles.icon}>📅</Text>
       </Pressable>
 
-      {Platform.OS === 'android' && open ? (
-        <DateTimePicker
-          value={draft}
-          mode="date"
-          display="calendar"
-          onChange={onPickerChange}
-          minimumDate={minDate}
-          maximumDate={maxDate}
-        />
-      ) : null}
-
-      {Platform.OS !== 'android' ? (
-        <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-          <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Pressable onPress={() => setOpen(false)}>
-                <Text style={styles.cancel}>Cancel</Text>
-              </Pressable>
-              <Text style={styles.sheetTitle}>{label}</Text>
-              <Pressable onPress={() => commit(draft)}>
-                <Text style={styles.done}>Done</Text>
-              </Pressable>
-            </View>
-            <DateTimePicker
-              value={draft}
-              mode="date"
-              display="spinner"
-              onChange={onPickerChange}
-              themeVariant="dark"
-              minimumDate={minDate}
-              maximumDate={maxDate}
-              style={styles.picker}
-            />
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <Pressable onPress={() => setOpen(false)}>
+              <Text style={styles.cancel}>Cancel</Text>
+            </Pressable>
+            <Text style={styles.sheetTitle}>{label}</Text>
+            <View style={styles.headerSpacer} />
           </View>
-        </Modal>
-      ) : null}
+          <Calendar
+            current={safeValue}
+            minDate={minimumDate}
+            maxDate={maximumDate}
+            markedDates={markedDates}
+            onDayPress={onDayPress}
+            enableSwipeMonths
+            theme={calendarTheme}
+            style={styles.calendar}
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -127,7 +112,7 @@ const styles = StyleSheet.create({
   },
   value: { color: colors.text, fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
   icon: { fontSize: 16 },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: 16,
@@ -144,7 +129,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   sheetTitle: { color: colors.text, fontWeight: '700', fontSize: 16 },
-  cancel: { color: colors.textSecondary, fontSize: 16 },
-  done: { color: colors.primary, fontWeight: '700', fontSize: 16 },
-  picker: { height: 216 },
+  cancel: { color: colors.textSecondary, fontSize: 16, minWidth: 64 },
+  headerSpacer: { minWidth: 64 },
+  calendar: {
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+  },
 });
