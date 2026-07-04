@@ -32,7 +32,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "verify:polygon": "node scripts/verify-polygon.mjs",
-    "verify:scanner": "node scripts/verify-scanner.mjs"
+    "verify:scanner": "node scripts/verify-scanner.mjs",
+    "test:ipad": "node scripts/ipad-test-server.mjs --tunnel"
   },
   "private": true
 }
