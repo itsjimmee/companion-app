@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Calendar, DateData } from 'react-native-calendars';
+import { MonthCalendar } from './MonthCalendar';
 import { colors, spacing } from '../constants/theme';
 import { formatDateEt, parseIsoDate } from '../utils/dates';
 
@@ -12,29 +12,13 @@ interface DatePickerFieldProps {
   maximumDate?: string;
 }
 
-/** iOS date pickers crash if value is outside [minimumDate, maximumDate]. */
+/** Date pickers crash if value is outside [minimumDate, maximumDate]. */
 function clampDate(date: Date, minimumDate?: string, maximumDate?: string): Date {
   let ms = date.getTime();
   if (minimumDate) ms = Math.max(ms, parseIsoDate(minimumDate).getTime());
   if (maximumDate) ms = Math.min(ms, parseIsoDate(maximumDate).getTime());
   return new Date(ms);
 }
-
-const calendarTheme = {
-  backgroundColor: colors.surface,
-  calendarBackground: colors.surface,
-  textSectionTitleColor: colors.textMuted,
-  selectedDayBackgroundColor: colors.primary,
-  selectedDayTextColor: '#ffffff',
-  todayTextColor: colors.primary,
-  dayTextColor: colors.text,
-  textDisabledColor: '#3d4a66',
-  monthTextColor: colors.text,
-  arrowColor: colors.primary,
-  textDayFontWeight: '600' as const,
-  textMonthFontWeight: '700' as const,
-  textDayHeaderFontWeight: '600' as const,
-};
 
 export function DatePickerField({ label, value, onChange, minimumDate, maximumDate }: DatePickerFieldProps) {
   const [open, setOpen] = useState(false);
@@ -43,15 +27,8 @@ export function DatePickerField({ label, value, onChange, minimumDate, maximumDa
     [value, minimumDate, maximumDate]
   );
 
-  const markedDates = useMemo(
-    () => ({
-      [safeValue]: { selected: true, selectedColor: colors.primary },
-    }),
-    [safeValue]
-  );
-
-  const onDayPress = (day: DateData) => {
-    const picked = clampDate(parseIsoDate(day.dateString), minimumDate, maximumDate);
+  const onSelect = (isoDate: string) => {
+    const picked = clampDate(parseIsoDate(isoDate), minimumDate, maximumDate);
     onChange(formatDateEt(picked));
     setOpen(false);
   };
@@ -74,15 +51,11 @@ export function DatePickerField({ label, value, onChange, minimumDate, maximumDa
             <Text style={styles.sheetTitle}>{label}</Text>
             <View style={styles.headerSpacer} />
           </View>
-          <Calendar
-            current={safeValue}
-            minDate={minimumDate}
-            maxDate={maximumDate}
-            markedDates={markedDates}
-            onDayPress={onDayPress}
-            enableSwipeMonths
-            theme={calendarTheme}
-            style={styles.calendar}
+          <MonthCalendar
+            value={safeValue}
+            minimumDate={minimumDate}
+            maximumDate={maximumDate}
+            onSelect={onSelect}
           />
         </View>
       </Modal>
@@ -131,8 +104,4 @@ const styles = StyleSheet.create({
   sheetTitle: { color: colors.text, fontWeight: '700', fontSize: 16 },
   cancel: { color: colors.textSecondary, fontSize: 16, minWidth: 64 },
   headerSpacer: { minWidth: 64 },
-  calendar: {
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-  },
 });
