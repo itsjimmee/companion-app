@@ -9,7 +9,6 @@ import { createServer } from 'http';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import ngrok from '@expo/ngrok';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -133,28 +132,21 @@ server.listen(PORT, '0.0.0.0', async () => {
 
   if (useTunnel) {
     try {
-      const url = await ngrok.connect({ addr: PORT, authtoken: process.env.NGROK_AUTHTOKEN || undefined });
-      printTunnel(url);
-    } catch (e) {
-      console.warn('ngrok failed, trying localtunnel…', e.message);
-      try {
-        const { spawn } = await import('child_process');
-        const lt = spawn('npx', ['--yes', 'localtunnel', '--port', String(PORT)], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        let url = '';
-        lt.stdout.on('data', (chunk) => {
-          const m = chunk.toString().match(/https:\/\/[^\s]+/);
-          if (m) {
-            url = m[0];
-            printTunnel(url);
-          }
-        });
-        lt.stderr.on('data', () => {});
-        lt.on('error', () => console.log('Open on same network: http://<machine-ip>:' + PORT));
-      } catch {
-        console.log('Open on same network: http://<machine-ip>:' + PORT);
-      }
+      const { spawn } = await import('child_process');
+      const cf = spawn('npx', ['--yes', 'cloudflared', 'tunnel', '--url', `http://localhost:${PORT}`], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      cf.stdout.on('data', (chunk) => {
+        const m = chunk.toString().match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+        if (m) printTunnel(m[0]);
+      });
+      cf.stderr.on('data', (chunk) => {
+        const m = chunk.toString().match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+        if (m) printTunnel(m[0]);
+      });
+      cf.on('error', () => console.log('Tunnel failed — run: npx cloudflared tunnel --url http://localhost:' + PORT));
+    } catch {
+      console.log('Run tunnel manually: npx cloudflared tunnel --url http://localhost:' + PORT);
     }
   } else {
     console.log('Tip: run with --tunnel for iPad access from anywhere');
@@ -167,8 +159,7 @@ function printTunnel(url) {
   console.log('  Open on iPad Safari:');
   console.log('  ' + url);
   console.log('');
-  console.log('  If localtunnel asks for a password, use');
-  console.log('  this machine\'s public IP (see ifconfig.me).');
+  console.log('  If the link stops working, ask the agent to restart test:ipad.');
   console.log('═══════════════════════════════════════════');
   console.log('');
 }
