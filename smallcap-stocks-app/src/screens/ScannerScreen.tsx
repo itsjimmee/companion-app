@@ -62,6 +62,16 @@ export function ScannerScreen({ navigation }: Props) {
     startScan();
   };
 
+  const onFromChange = (d: string) => {
+    setDateFrom(d);
+    if (d > dateTo) setDateTo(d);
+  };
+
+  const onToChange = (d: string) => {
+    setDateTo(d);
+    if (d < dateFrom) setDateFrom(d);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <LinearGradient colors={[colors.surface, colors.background]} style={styles.header}>
@@ -77,8 +87,8 @@ export function ScannerScreen({ navigation }: Props) {
       </LinearGradient>
 
       <View style={styles.dateRow}>
-        <DatePickerField label="From" value={dateFrom} onChange={setDateFrom} maximumDate={dateTo} />
-        <DatePickerField label="To" value={dateTo} onChange={setDateTo} minimumDate={dateFrom} />
+        <DatePickerField label="From" value={dateFrom} onChange={onFromChange} maximumDate={dateTo} />
+        <DatePickerField label="To" value={dateTo} onChange={onToChange} minimumDate={dateFrom} />
         <Pressable
           style={styles.todayBtn}
           onPress={() => {

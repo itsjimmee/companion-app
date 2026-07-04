@@ -51,6 +51,16 @@ export function GapViewerScreen({ navigation }: Props) {
   const rangeDays = weekdaysBetween(dateFrom, dateTo);
   const rangeTooLarge = rangeDays > GAP_VIEWER_MAX_DAYS;
 
+  const onFromChange = (d: string) => {
+    setDateFrom(d);
+    if (d > dateTo) setDateTo(d);
+  };
+
+  const onToChange = (d: string) => {
+    setDateTo(d);
+    if (d < dateFrom) setDateFrom(d);
+  };
+
   const onScan = () => {
     const t = ticker.trim().toUpperCase();
     if (!t || rangeTooLarge) return;
@@ -83,8 +93,8 @@ export function GapViewerScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.dateRow}>
-        <DatePickerField label="From" value={dateFrom} onChange={setDateFrom} maximumDate={dateTo} />
-        <DatePickerField label="To" value={dateTo} onChange={setDateTo} minimumDate={dateFrom} />
+        <DatePickerField label="From" value={dateFrom} onChange={onFromChange} maximumDate={dateTo} />
+        <DatePickerField label="To" value={dateTo} onChange={onToChange} minimumDate={dateFrom} />
       </View>
 
       {rangeTooLarge ? (

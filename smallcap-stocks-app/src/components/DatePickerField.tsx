@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { colors, spacing } from '../constants/theme';
@@ -12,17 +12,34 @@ interface DatePickerFieldProps {
   maximumDate?: string;
 }
 
+/** iOS UIDatePicker crashes if value is outside [minimumDate, maximumDate]. */
+function clampDate(date: Date, minimumDate?: string, maximumDate?: string): Date {
+  let ms = date.getTime();
+  if (minimumDate) ms = Math.max(ms, parseIsoDate(minimumDate).getTime());
+  if (maximumDate) ms = Math.min(ms, parseIsoDate(maximumDate).getTime());
+  return new Date(ms);
+}
+
 export function DatePickerField({ label, value, onChange, minimumDate, maximumDate }: DatePickerFieldProps) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(parseIsoDate(value));
+  const safeValue = useMemo(
+    () => clampDate(parseIsoDate(value), minimumDate, maximumDate),
+    [value, minimumDate, maximumDate]
+  );
+  const [draft, setDraft] = useState(safeValue);
+
+  useEffect(() => {
+    if (!open) setDraft(safeValue);
+  }, [safeValue, open]);
 
   const openPicker = () => {
-    setDraft(parseIsoDate(value));
+    setDraft(safeValue);
     setOpen(true);
   };
 
   const commit = (date: Date) => {
-    onChange(formatDateEt(date));
+    const clamped = clampDate(date, minimumDate, maximumDate);
+    onChange(formatDateEt(clamped));
     setOpen(false);
   };
 
@@ -31,9 +48,13 @@ export function DatePickerField({ label, value, onChange, minimumDate, maximumDa
       if (Platform.OS === 'android') setOpen(false);
       return;
     }
-    setDraft(selected);
-    if (Platform.OS === 'android') commit(selected);
+    const clamped = clampDate(selected, minimumDate, maximumDate);
+    setDraft(clamped);
+    if (Platform.OS === 'android') commit(clamped);
   };
+
+  const minDate = minimumDate ? parseIsoDate(minimumDate) : undefined;
+  const maxDate = maximumDate ? parseIsoDate(maximumDate) : undefined;
 
   return (
     <View style={styles.wrap}>
@@ -49,8 +70,8 @@ export function DatePickerField({ label, value, onChange, minimumDate, maximumDa
           mode="date"
           display="calendar"
           onChange={onPickerChange}
-          minimumDate={minimumDate ? parseIsoDate(minimumDate) : undefined}
-          maximumDate={maximumDate ? parseIsoDate(maximumDate) : undefined}
+          minimumDate={minDate}
+          maximumDate={maxDate}
         />
       ) : null}
 
@@ -70,11 +91,11 @@ export function DatePickerField({ label, value, onChange, minimumDate, maximumDa
             <DateTimePicker
               value={draft}
               mode="date"
-              display="inline"
+              display="spinner"
               onChange={onPickerChange}
               themeVariant="dark"
-              minimumDate={minimumDate ? parseIsoDate(minimumDate) : undefined}
-              maximumDate={maximumDate ? parseIsoDate(maximumDate) : undefined}
+              minimumDate={minDate}
+              maximumDate={maxDate}
               style={styles.picker}
             />
           </View>
@@ -125,5 +146,5 @@ const styles = StyleSheet.create({
   sheetTitle: { color: colors.text, fontWeight: '700', fontSize: 16 },
   cancel: { color: colors.textSecondary, fontSize: 16 },
   done: { color: colors.primary, fontWeight: '700', fontSize: 16 },
-  picker: { height: 320 },
+  picker: { height: 216 },
 });
