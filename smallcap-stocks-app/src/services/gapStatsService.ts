@@ -6,9 +6,9 @@ import { isDemoMode } from './polygonApi';
 import { fetchDayRecordsForRange } from './intradaySession';
 import { intradayRunMetrics, sessionMetricsFromRec } from './scanAnalytics';
 import { DayRec } from './scanAnalytics';
-import { addDays, todayEt } from '../utils/dates';
+import { addDays, todayEt, weekdaysBetween } from '../utils/dates';
 
-const GAP_VIEWER_MAX_DAYS = 365;
+const GAP_VIEWER_MAX_DAYS = 730;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -70,6 +70,7 @@ export async function scanTickerPolygon(
       gaps.push({
         date: d,
         volume: r.day_vol ?? r.reg_vol ?? 0,
+        premarketVolume: r.pm_vol,
         gapPercent: gapPct ?? 0,
         marketOpen: round2(regOpen),
         marketClose: regClose != null ? round2(regClose) : undefined,
@@ -119,8 +120,6 @@ export async function scanTickerPolygon(
     }
 
     if (regClose != null) {
-      prevDayGapPct = gapPct;
-      prevDayIntradayRunPct = ir.intradayRunPct ?? null;
       prevClose = regClose;
       prevDayRec = r;
     }
@@ -137,13 +136,36 @@ export async function scanTickerPolygon(
 const scanCache = new Map<string, Awaited<ReturnType<typeof scanTickerPolygon>>>();
 
 function cacheKey(ticker: string, from: string, to: string): string {
-  return `${ticker}:${from}:${to}`;
+  return `${ticker.toUpperCase()}:${from.slice(0, 10)}:${to.slice(0, 10)}`;
 }
 
-export async function getScanTickerCached(ticker: string, from: string, to: string) {
-  const key = cacheKey(ticker, from, to);
+export function clearScanTickerCache(ticker: string, from: string, to: string): void {
+  scanCache.delete(cacheKey(ticker, from, to));
+}
+
+export async function getScanTickerCached(
+  ticker: string,
+  from: string,
+  to: string,
+  signal?: AbortSignal
+) {
+  const fromStr = from.slice(0, 10);
+  const toStr = to.slice(0, 10);
+  const days = weekdaysBetween(fromStr, toStr);
+  if (days > GAP_VIEWER_MAX_DAYS) {
+    throw new Error(`Date range too large (${days} weekdays; max ${GAP_VIEWER_MAX_DAYS})`);
+  }
+
+  const key = cacheKey(ticker, fromStr, toStr);
   if (scanCache.has(key)) return scanCache.get(key)!;
-  const result = await scanTickerPolygon(ticker, { dateFrom: from, dateTo: to });
+
+  if (signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    throw err;
+  }
+
+  const result = await scanTickerPolygon(ticker, { dateFrom: fromStr, dateTo: toStr });
   scanCache.set(key, result);
   return result;
 }

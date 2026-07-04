@@ -50,6 +50,26 @@ export function* iterWeekdays(from: string, to: string): Generator<string> {
   }
 }
 
+export function nextTradingDate(d: Date): Date | null {
+  const next = new Date(d);
+  next.setDate(next.getDate() + 1);
+  for (let i = 0; i < 7; i++) {
+    if (next.getDay() !== 0 && next.getDay() !== 6) return next;
+    next.setDate(next.getDate() + 1);
+  }
+  return null;
+}
+
+export function addTradingDays(dateStr: string, count: number): string {
+  let d = parseIsoDate(dateStr);
+  for (let i = 0; i < count; i++) {
+    const n = nextTradingDate(d);
+    if (!n) break;
+    d = n;
+  }
+  return formatDateEt(d);
+}
+
 export function resolveScanDates(dateFrom: string, dateTo: string): {
   dateFrom: string;
   dateTo: string;

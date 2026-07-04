@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { buildIntradayChartPayload } from '../services/gapChartService';
+import { buildIntradayChartPayload, CandleMinutes } from '../services/gapChartService';
 import { IntradayChartPayload } from '../types/stock';
 
-export function useGapDayChart(ticker: string, date: string, candleMinutes = 3) {
+export function useGapDayChart(
+  ticker: string,
+  date: string,
+  candleMinutes: CandleMinutes = 3,
+  forwardDays = 1
+) {
   const [payload, setPayload] = useState<IntradayChartPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,7 +17,7 @@ export function useGapDayChart(ticker: string, date: string, candleMinutes = 3) 
     try {
       setLoading(true);
       setError(null);
-      const data = await buildIntradayChartPayload(ticker, date, candleMinutes);
+      const data = await buildIntradayChartPayload(ticker, date, candleMinutes, forwardDays);
       if (!data) throw new Error('No intraday data for this date');
       setPayload(data);
     } catch (err) {
@@ -21,7 +26,7 @@ export function useGapDayChart(ticker: string, date: string, candleMinutes = 3) 
     } finally {
       setLoading(false);
     }
-  }, [ticker, date, candleMinutes]);
+  }, [ticker, date, candleMinutes, forwardDays]);
 
   useEffect(() => {
     load();

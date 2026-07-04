@@ -3,6 +3,9 @@
  */
 import { fetchAggs } from './polygonApi';
 import { DayRec } from './scanAnalytics';
+import { formatDateEt, parseIsoDate } from '../utils/dates';
+
+const CHUNK_DAYS = 120;
 
 const PM_START = 4 * 60;
 const PM_END = 9 * 60 + 30;
@@ -147,38 +150,62 @@ export async function fetchDayRecordsForRange(
   barMinutes = SCAN_SESSION_BAR_MINUTES
 ): Promise<(DayRec & { date: string })[]> {
   const sym = ticker.toUpperCase();
-  let bars: AggBar[];
-  try {
-    bars = await fetchAggs(sym, barMinutes, 'minute', from.slice(0, 10), to.slice(0, 10));
-  } catch {
-    return [];
-  }
-  if (!bars.length) return [];
+  const fromStr = from.slice(0, 10);
+  const toStr = to.slice(0, 10);
 
-  const byDate = new Map<string, AggBar[]>();
-  for (const bar of bars) {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(new Date(bar.t));
-    const y = parts.find((p) => p.type === 'year')?.value ?? '';
-    const m = parts.find((p) => p.type === 'month')?.value ?? '';
-    const d = parts.find((p) => p.type === 'day')?.value ?? '';
-    const dateStr = `${y}-${m}-${d}`;
-    const list = byDate.get(dateStr) ?? [];
-    list.push(bar);
-    byDate.set(dateStr, list);
+  // Chunk long ranges to avoid Polygon timeouts
+  const chunks: { start: string; end: string }[] = [];
+  let cursor = fromStr;
+  while (cursor <= toStr) {
+    const end = (() => {
+      const d = parseIsoDate(cursor);
+      d.setDate(d.getDate() + CHUNK_DAYS);
+      const candidate = formatDateEt(d);
+      return candidate > toStr ? toStr : candidate;
+    })();
+    chunks.push({ start: cursor, end });
+    if (end >= toStr) break;
+    const next = parseIsoDate(end);
+    next.setDate(next.getDate() + 1);
+    cursor = formatDateEt(next);
   }
 
-  const records: (DayRec & { date: string })[] = [];
-  for (const [date, dayBars] of byDate) {
-    if (date < from.slice(0, 10) || date > to.slice(0, 10)) continue;
-    records.push({ date, ...computeDayRec(dayBars) });
+  const allRecords: (DayRec & { date: string })[] = [];
+  for (const chunk of chunks) {
+    let bars: AggBar[];
+    try {
+      bars = await fetchAggs(sym, barMinutes, 'minute', chunk.start, chunk.end);
+    } catch {
+      continue;
+    }
+    if (!bars.length) continue;
+
+    const byDate = new Map<string, AggBar[]>();
+    for (const bar of bars) {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(new Date(bar.t));
+      const y = parts.find((p) => p.type === 'year')?.value ?? '';
+      const m = parts.find((p) => p.type === 'month')?.value ?? '';
+      const d = parts.find((p) => p.type === 'day')?.value ?? '';
+      const dateStr = `${y}-${m}-${d}`;
+      const list = byDate.get(dateStr) ?? [];
+      list.push(bar);
+      byDate.set(dateStr, list);
+    }
+
+    for (const [date, dayBars] of byDate) {
+      if (date < fromStr || date > toStr) continue;
+      allRecords.push({ date, ...computeDayRec(dayBars) });
+    }
   }
-  records.sort((a, b) => a.date.localeCompare(b.date));
-  return records;
+
+  const deduped = new Map<string, DayRec & { date: string }>();
+  for (const rec of allRecords) deduped.set(rec.date, rec);
+  return [...deduped.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export async function runPool<T, R>(

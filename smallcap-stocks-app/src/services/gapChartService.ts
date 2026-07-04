@@ -1,5 +1,9 @@
 import { IntradayChartPayload } from '../types/stock';
 import { fetchAggs, formatDate, previousMarketDate } from './polygonApi';
+import { addTradingDays } from '../utils/dates';
+
+export const ALLOWED_CANDLE_MINUTES = [1, 3, 5, 15] as const;
+export type CandleMinutes = (typeof ALLOWED_CANDLE_MINUTES)[number];
 
 interface BarPoint {
   timeMs: number;
@@ -32,12 +36,19 @@ function timeToMinutes(hours: number, minutes: number): number {
   return hours * 60 + minutes;
 }
 
-function filterExtendedHours(bars: BarPoint[], chartDate: string, previousDate: string): BarPoint[] {
+function filterExtendedHours(
+  bars: BarPoint[],
+  chartDate: string,
+  previousDate: string,
+  forwardDates: string[]
+): BarPoint[] {
+  const forwardSet = new Set(forwardDates);
   return bars.filter((bar) => {
     const { date, hours, minutes } = nyTime(bar.timeMs);
     const t = timeToMinutes(hours, minutes);
     if (date === previousDate && t >= 16 * 60 && t <= 20 * 60) return true;
     if (date === chartDate && t >= 4 * 60 && t <= 20 * 60) return true;
+    if (forwardSet.has(date) && t >= 4 * 60 && t <= 20 * 60) return true;
     return false;
   });
 }
@@ -53,11 +64,7 @@ function computeVwap(bars: BarPoint[]): number[] {
   });
 }
 
-function nearestSyntheticTime(
-  targetMs: number,
-  bars: BarPoint[],
-  syntheticTimes: number[]
-): number {
+function nearestSyntheticTime(targetMs: number, bars: BarPoint[], syntheticTimes: number[]): number {
   let bestIdx = 0;
   let bestDiff = Infinity;
   bars.forEach((bar, i) => {
@@ -78,13 +85,23 @@ function sessionTimestamp(date: string, clock: string): number {
 export async function buildIntradayChartPayload(
   ticker: string,
   chartDateStr: string,
-  candleMinutes = 3
+  candleMinutes: CandleMinutes = 3,
+  forwardDays = 1,
+  gapDateStr?: string
 ): Promise<IntradayChartPayload | null> {
   const chartDate = chartDateStr.slice(0, 10);
   const chartDateObj = new Date(`${chartDate}T12:00:00`);
   const prevDate = formatDate(previousMarketDate(chartDateObj));
 
-  const aggs = await fetchAggs(ticker, candleMinutes, 'minute', prevDate, chartDate);
+  const forwardDates: string[] = [];
+  let cursor = chartDate;
+  for (let i = 0; i < Math.max(0, forwardDays); i++) {
+    cursor = addTradingDays(cursor, 1);
+    forwardDates.push(cursor);
+  }
+  const fetchEnd = forwardDates.length ? forwardDates[forwardDates.length - 1] : chartDate;
+
+  const aggs = await fetchAggs(ticker, candleMinutes, 'minute', prevDate, fetchEnd);
   if (!aggs.length) return null;
 
   let bars: BarPoint[] = aggs.map((a) => ({
@@ -96,7 +113,7 @@ export async function buildIntradayChartPayload(
     volume: a.v,
   }));
 
-  bars = filterExtendedHours(bars, chartDate, prevDate);
+  bars = filterExtendedHours(bars, chartDate, prevDate, forwardDates);
   if (!bars.length) return null;
 
   const vwaps = computeVwap(bars);
@@ -128,15 +145,24 @@ export async function buildIntradayChartPayload(
     labels[String(syntheticTimes[i])] = `${date.slice(5)} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   });
 
-  const eventSpecs: [string, number, string][] = [
-    ['Prev Open', sessionTimestamp(prevDate, '09:30'), '#1f77b4'],
-    ['Prev Close', sessionTimestamp(prevDate, '16:00'), '#777777'],
-    ['AH End', sessionTimestamp(prevDate, '20:00'), '#777777'],
-    ['Premarket', sessionTimestamp(chartDate, '04:00'), '#777777'],
-    ['Open', sessionTimestamp(chartDate, '09:30'), '#1f77b4'],
-    ['Noon', sessionTimestamp(chartDate, '12:00'), '#9467bd'],
-    ['Close', sessionTimestamp(chartDate, '16:00'), '#d62728'],
-  ];
+  const gapDate = gapDateStr?.slice(0, 10);
+  const eventSpecs: [string, number, string][] = gapDate
+    ? [
+        ['D1 Gap Open', sessionTimestamp(gapDate, '09:30'), '#ffd740'],
+        ['D1 Gap Close', sessionTimestamp(gapDate, '16:00'), '#ffd740'],
+        ['Short Open', sessionTimestamp(chartDate, '09:30'), '#00e676'],
+        ['Noon', sessionTimestamp(chartDate, '12:00'), '#9467bd'],
+        ['Close', sessionTimestamp(chartDate, '16:00'), '#d62728'],
+      ]
+    : [
+        ['Prev Open', sessionTimestamp(prevDate, '09:30'), '#1f77b4'],
+        ['Prev Close', sessionTimestamp(prevDate, '16:00'), '#777777'],
+        ['AH End', sessionTimestamp(prevDate, '20:00'), '#777777'],
+        ['Premarket', sessionTimestamp(chartDate, '04:00'), '#777777'],
+        ['Open', sessionTimestamp(chartDate, '09:30'), '#1f77b4'],
+        ['Noon', sessionTimestamp(chartDate, '12:00'), '#9467bd'],
+        ['Close', sessionTimestamp(chartDate, '16:00'), '#d62728'],
+      ];
 
   const eventLines = eventSpecs.map(([label, ts, color]) => ({
     time: nearestSyntheticTime(ts, bars, syntheticTimes),
@@ -162,8 +188,10 @@ export async function buildIntradayChartPayload(
     },
   ];
 
+  const endLabel = forwardDates.length ? forwardDates[forwardDates.length - 1] : chartDate;
+
   return {
-    title: `${ticker} ${prevDate} → ${chartDate} ET · ${candleMinutes}min`,
+    title: `${ticker} ${prevDate} → ${endLabel} ET · ${candleMinutes}min${forwardDays > 0 ? ` +${forwardDays}d` : ''}`,
     candles,
     volume,
     vwap,

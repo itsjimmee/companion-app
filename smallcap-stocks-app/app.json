@@ -36,6 +36,9 @@
     "extra": {
       "polygonApiKey": "",
       "askedgarApiKey": ""
-    }
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
   }
 }
