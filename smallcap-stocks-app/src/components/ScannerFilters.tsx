@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, spacing } from '../constants/theme';
 import { ScannerFilter } from '../types/stock';
@@ -31,33 +32,46 @@ function FilterInput({
 }
 
 export function ScannerFilters({ filter, onChange }: ScannerFiltersProps) {
-  const update = (partial: Partial<ScannerFilter>) => onChange({ ...filter, ...partial });
+  const [draft, setDraft] = useState(filter);
+
+  useEffect(() => {
+    setDraft(filter);
+  }, [filter]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (JSON.stringify(draft) !== JSON.stringify(filter)) onChange(draft);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [draft, filter, onChange]);
+
+  const update = (partial: Partial<ScannerFilter>) => setDraft({ ...draft, ...partial });
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
       <FilterInput
         label="Min Gap %"
-        value={String(filter.minGapPercent)}
+        value={String(draft.minGapPercent)}
         onChangeText={(v) => update({ minGapPercent: Number(v) || 0 })}
       />
       <FilterInput
         label="Min Chg %"
-        value={String(filter.minChangePercent)}
+        value={String(draft.minChangePercent)}
         onChangeText={(v) => update({ minChangePercent: Number(v) || 0 })}
       />
       <FilterInput
         label="Min Vol"
-        value={String(Math.round(filter.minVolume / 1000)) + 'K'}
+        value={String(Math.round(draft.minVolume / 1000)) + 'K'}
         onChangeText={(v) => update({ minVolume: (Number(v.replace(/\D/g, '')) || 0) * 1000 })}
       />
       <FilterInput
         label="Min $"
-        value={String(filter.minPrice)}
+        value={String(draft.minPrice)}
         onChangeText={(v) => update({ minPrice: Number(v) || 0 })}
       />
       <FilterInput
         label="Max $"
-        value={String(filter.maxPrice)}
+        value={String(draft.maxPrice)}
         onChangeText={(v) => update({ maxPrice: Number(v) || 0 })}
       />
       <View style={styles.sortGroup}>
@@ -66,7 +80,7 @@ export function ScannerFilters({ filter, onChange }: ScannerFiltersProps) {
           {(['gapPercent', 'changePercent', 'volume'] as const).map((key) => (
             <Text
               key={key}
-              style={[styles.sortChip, filter.sortBy === key && styles.sortChipActive]}
+              style={[styles.sortChip, draft.sortBy === key && styles.sortChipActive]}
               onPress={() => update({ sortBy: key })}
             >
               {key === 'gapPercent' ? 'Gap' : key === 'changePercent' ? '%' : 'Vol'}

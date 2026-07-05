@@ -1,19 +1,29 @@
 import { useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { DatePickerField } from '../components/DatePickerField';
 import { ScannerFilters } from '../components/ScannerFilters';
 import { TickerCard } from '../components/TickerCard';
-import { LoadingView } from '../components/LoadingView';
 import { hasPolygonKey } from '../constants/apiKeys';
 import { colors, spacing } from '../constants/theme';
 import { useScanner } from '../hooks/useScanner';
 import { isDemoMode } from '../services/polygonApi';
+import { SCAN_RANGE_MAX_DAYS } from '../services/polygonScanService';
 import { ScanType } from '../services/scannerService';
 import { DEFAULT_SCANNER_FILTER } from '../types/stock';
+import { todayEt, weekdaysBetween } from '../utils/dates';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
 
 type Props = CompositeScreenProps<
@@ -21,23 +31,46 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
-const SCAN_TYPES: { key: ScanType; label: string; hint: string }[] = [
-  { key: 'gaps', label: 'Gaps', hint: 'Grouped daily gap + HOD push' },
-  { key: 'intraday', label: 'Intraday', hint: 'RTH runners ≥5%' },
-  { key: 'premarket', label: 'Premarket', hint: 'Daily coarse (minute scan on desktop)' },
-  { key: 'afterhours', label: 'After Hours', hint: 'Daily coarse (minute scan on desktop)' },
+const SCAN_TYPES: { key: ScanType; label: string }[] = [
+  { key: 'gaps', label: 'Gaps' },
+  { key: 'intraday', label: 'Intraday' },
+  { key: 'premarket', label: 'Premarket' },
+  { key: 'afterhours', label: 'After Hours' },
+  { key: 'day2', label: 'Day 2' },
 ];
 
 export function ScannerScreen({ navigation }: Props) {
   const [filter, setFilter] = useState(DEFAULT_SCANNER_FILTER);
   const [scanType, setScanType] = useState<ScanType>('gaps');
-  const { results, loading, refreshing, error, lastUpdated, refresh } = useScanner(filter, new Date(), scanType);
+  const [dateFrom, setDateFrom] = useState(todayEt());
+  const [dateTo, setDateTo] = useState(todayEt());
+
+  const { results, scanning, error, lastUpdated, rangeNote, startScan, stopScan } = useScanner({
+    dateFrom,
+    dateTo,
+    filter,
+    scanType,
+  });
 
   const scanLabel = SCAN_TYPES.find((s) => s.key === scanType)?.label ?? 'Gaps';
+  const isRange = dateFrom !== dateTo;
+  const rangeDays = isRange ? weekdaysBetween(dateFrom, dateTo) : 1;
+  const rangeTooLarge = rangeDays > SCAN_RANGE_MAX_DAYS;
 
-  if (loading && !refreshing) {
-    return <LoadingView message={`Scanning Polygon ${scanLabel.toLowerCase()}...`} />;
-  }
+  const onScan = () => {
+    if (rangeTooLarge) return;
+    startScan();
+  };
+
+  const onFromChange = (d: string) => {
+    setDateFrom(d);
+    if (d > dateTo) setDateTo(d);
+  };
+
+  const onToChange = (d: string) => {
+    setDateTo(d);
+    if (d < dateFrom) setDateFrom(d);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -46,12 +79,55 @@ export function ScannerScreen({ navigation }: Props) {
         <View style={styles.statusRow}>
           <View style={[styles.dot, hasPolygonKey() ? styles.dotLive : styles.dotIdle]} />
           <Text style={styles.statusText}>
-            {hasPolygonKey() ? 'Polygon Live' : 'Demo'}
-            {lastUpdated ? ` · ${lastUpdated.toLocaleTimeString()}` : ''}
+            {scanning ? 'Scanning…' : hasPolygonKey() ? 'Ready · tap Scan' : 'Demo'}
+            {lastUpdated && !scanning ? ` · ${lastUpdated.toLocaleTimeString()}` : ''}
           </Text>
           {isDemoMode() && <Text style={styles.demoBadge}>NO KEY</Text>}
         </View>
       </LinearGradient>
+
+      <View style={styles.dateRow}>
+        <DatePickerField label="From" value={dateFrom} onChange={onFromChange} maximumDate={dateTo} />
+        <DatePickerField label="To" value={dateTo} onChange={onToChange} minimumDate={dateFrom} />
+        <Pressable
+          style={styles.todayBtn}
+          onPress={() => {
+            const t = todayEt();
+            setDateFrom(t);
+            setDateTo(t);
+          }}
+        >
+          <Text style={styles.todayBtnText}>Today</Text>
+        </Pressable>
+      </View>
+
+      {rangeTooLarge ? (
+        <Text style={styles.rangeWarn}>
+          Range is {rangeDays} weekdays (max {SCAN_RANGE_MAX_DAYS}). Narrow dates to scan.
+        </Text>
+      ) : isRange ? (
+        <Text style={styles.rangeNote}>{rangeDays} weekdays · up to {SCAN_RANGE_MAX_DAYS} allowed</Text>
+      ) : null}
+      {rangeNote ? <Text style={styles.rangeNote}>{rangeNote}</Text> : null}
+
+      <View style={styles.actionRow}>
+        <Pressable
+          style={[styles.scanBtn, (scanning || rangeTooLarge) && styles.btnDisabled]}
+          onPress={onScan}
+          disabled={scanning || rangeTooLarge}
+        >
+          {scanning ? (
+            <ActivityIndicator color="#1a1a2e" />
+          ) : (
+            <Text style={styles.scanBtnText}>Scan</Text>
+          )}
+        </Pressable>
+        {scanning ? (
+          <Pressable style={styles.stopBtn} onPress={stopScan}>
+            <Text style={styles.stopBtnText}>Stop</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       <View style={styles.scanTypes}>
         {SCAN_TYPES.map((s) => (
@@ -77,22 +153,21 @@ export function ScannerScreen({ navigation }: Props) {
 
       <FlatList
         data={results}
-        keyExtractor={(item) => item.symbol}
+        keyExtractor={(item) => `${item.symbol}-${item.scanDate ?? 'x'}`}
         contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />
-        }
         ListHeaderComponent={
           <Text style={styles.resultCount}>
-            {results.length} {scanLabel.toLowerCase()} · Gap {filter.minGapPercent}%+ · ${filter.minPrice}–$
-            {filter.maxPrice}
+            {results.length} {scanLabel.toLowerCase()}
+            {isRange ? ` · ${dateFrom} → ${dateTo}` : ` · ${dateFrom}`}
           </Text>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No matches</Text>
-            <Text style={styles.emptySubtitle}>Lower gap % or volume thresholds</Text>
-          </View>
+          !scanning ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No results yet</Text>
+              <Text style={styles.emptySubtitle}>Set dates and tap Scan</Text>
+            </View>
+          ) : null
         }
         renderItem={({ item, index }) => (
           <TickerCard
@@ -114,7 +189,52 @@ export function ScannerScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  header: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  dateRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+    alignItems: 'flex-end',
+  },
+  todayBtn: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 2,
+  },
+  todayBtnText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
+  rangeNote: { color: colors.textMuted, fontSize: 12, paddingHorizontal: spacing.md, marginBottom: 4 },
+  rangeWarn: { color: colors.warning, fontSize: 12, paddingHorizontal: spacing.md, marginBottom: 4 },
+  actionRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  scanBtn: {
+    flex: 1,
+    backgroundColor: '#00d4aa',
+    borderRadius: 12,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanBtnText: { color: '#1a1a2e', fontWeight: '800', fontSize: 16 },
+  stopBtn: {
+    backgroundColor: 'rgba(239,68,68,0.2)',
+    borderRadius: 12,
+    paddingHorizontal: spacing.lg,
+    minHeight: 44,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  stopBtnText: { color: colors.danger, fontWeight: '800', fontSize: 16 },
+  btnDisabled: { opacity: 0.6 },
   scanTypes: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -156,9 +276,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.15)',
     borderRadius: 10,
     padding: spacing.sm,
+    marginBottom: spacing.sm,
   },
   errorText: { color: colors.danger, fontSize: 13 },
-  empty: { alignItems: 'center', paddingTop: spacing.xl * 2 },
+  empty: { alignItems: 'center', paddingTop: spacing.xl },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '600' },
   emptySubtitle: { color: colors.textSecondary, marginTop: spacing.xs },
 });

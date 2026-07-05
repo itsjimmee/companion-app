@@ -2,6 +2,7 @@ import { POLYGON_ADJUSTED, POLYGON_API_KEY, hasPolygonKey } from '../constants/a
 import { CandleData, StockQuote } from '../types/stock';
 
 const POLYGON_BASE = 'https://api.polygon.io';
+const FETCH_TIMEOUT_MS = 30_000;
 
 interface PolygonAgg {
   T?: string;
@@ -50,7 +51,20 @@ export async function polygonFetch<T>(path: string, params: Record<string, strin
     url.searchParams.set('adjusted', POLYGON_ADJUSTED ? 'true' : 'false');
   }
 
-  const response = await fetch(url.toString());
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), { signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Polygon request timed out after ${FETCH_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+
   const data = (await response.json()) as T & { status?: string; error?: string; message?: string };
 
   if (!response.ok || data.status === 'ERROR') {

@@ -1,99 +1,197 @@
 /**
- * Per-ticker gap history — port of polygon_scan.scan_ticker (daily-bar mode for mobile).
+ * Per-ticker gap history — port of polygon_scan.scan_ticker (minute-bar sessions).
  */
 import { AfterhoursRow, GapDayRow, PremarketRow } from '../types/stock';
-import { fetchDailyBars, formatDate, isDemoMode } from './polygonApi';
+import { isDemoMode } from './polygonApi';
+import { fetchDayRecordsForRange } from './intradaySession';
+import { intradayRunMetrics, sessionMetricsFromRec } from './scanAnalytics';
+import { DayRec } from './scanAnalytics';
+import { addDays, todayEt, weekdaysBetween } from '../utils/dates';
+
+const GAP_VIEWER_MAX_DAYS = 730;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export async function scanTickerPolygon(ticker: string): Promise<{
+function prevAhGainPct(prevRec: DayRec | null | undefined): number | undefined {
+  if (!prevRec) return undefined;
+  const regClose = prevRec.reg_close;
+  const ahHigh = prevRec.ah_high;
+  if (regClose == null || ahHigh == null || regClose <= 0) return undefined;
+  return round2(((ahHigh - regClose) / regClose) * 100);
+}
+
+export interface ScanTickerOptions {
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export async function scanTickerPolygon(
+  ticker: string,
+  options: ScanTickerOptions = {}
+): Promise<{
   gaps: GapDayRow[];
   premarket: PremarketRow[];
   afterhours: AfterhoursRow[];
   intraday_runners: GapDayRow[];
 }> {
-  if (isDemoMode()) return { gaps: [], premarket: [], afterhours: [], intraday_runners: [] };
+  const empty = { gaps: [], premarket: [], afterhours: [], intraday_runners: [] };
+  if (isDemoMode()) return empty;
 
-  const bars = await fetchDailyBars(ticker, 365);
-  if (bars.length < 2) return { gaps: [], premarket: [], afterhours: [], intraday_runners: [] };
+  const to = (options.dateTo ?? todayEt()).slice(0, 10);
+  const from = (options.dateFrom ?? addDays(to, -365)).slice(0, 10);
+
+  const records = await fetchDayRecordsForRange(ticker.toUpperCase(), from, to);
+  if (!records.length) return empty;
 
   const gaps: GapDayRow[] = [];
+  const premarket: PremarketRow[] = [];
+  const afterhours: AfterhoursRow[] = [];
   const intraday_runners: GapDayRow[] = [];
 
-  for (let i = 1; i < bars.length; i++) {
-    const prev = bars[i - 1];
-    const curr = bars[i];
-    if (!prev.c || !curr.o) continue;
+  let prevClose: number | null = null;
+  let prevDayRec: DayRec | null = null;
 
-    const gapPct = ((curr.o - prev.c) / prev.c) * 100;
-    const date = formatDate(new Date(curr.t));
-    const regOpen = curr.o;
-    const regClose = curr.c;
-    const regHigh = curr.h;
-    const vwap = curr.vw ?? (curr.h + curr.l + curr.c) / 3;
-    const dayChange =
-      regOpen && regClose != null ? ((regClose - regOpen) / regOpen) * 100 : undefined;
-    const hodPush = regOpen ? ((regHigh - regOpen) / regOpen) * 100 : 0;
-    const intradayRun = Math.max(hodPush, regOpen && curr.l ? ((regHigh - curr.l) / curr.l) * 100 : 0);
+  for (const r of records) {
+    const d = r.date;
+    const regOpen = r.reg_open;
+    const regClose = r.reg_close;
+    const regHigh = r.reg_high;
+    const regVwap = r.reg_vwap;
+    const prevAh = prevAhGainPct(prevDayRec);
 
-    const row: GapDayRow = {
-      date,
-      volume: curr.v,
-      gapPercent: round2(gapPct),
-      marketOpen: round2(regOpen),
-      marketClose: regClose != null ? round2(regClose) : undefined,
-      closedOverVwap: regClose != null ? regClose >= vwap : undefined,
-      dayChangePercent: dayChange != null ? round2(dayChange) : undefined,
-      hodPushPct: round2(hodPush),
-    };
+    const sm = sessionMetricsFromRec(r, prevClose);
+    const gapPct =
+      regOpen != null && prevClose ? round2(((regOpen - prevClose) / prevClose) * 100) : null;
+    const ir = intradayRunMetrics(r, sm, gapPct);
 
-    if (Math.abs(gapPct) >= 3) gaps.push(row);
-    if (intradayRun >= 5) {
-      intraday_runners.push({ ...row, gapPercent: round2(gapPct) });
+    if (regOpen != null && prevClose) {
+      gaps.push({
+        date: d,
+        volume: r.day_vol ?? r.reg_vol ?? 0,
+        premarketVolume: r.pm_vol,
+        gapPercent: gapPct ?? 0,
+        marketOpen: round2(regOpen),
+        marketClose: regClose != null ? round2(regClose) : undefined,
+        closedOverVwap:
+          regClose != null && regVwap != null ? regClose >= regVwap : undefined,
+        dayChangePercent:
+          regOpen && regClose != null ? round2(((regClose - regOpen) / regOpen) * 100) : undefined,
+        hodPushPct: sm.rth_hod_push_pct,
+      });
+    }
+
+    if (regOpen && regHigh && (ir.intradayRunPct ?? 0) >= 5) {
+      intraday_runners.push({
+        date: d,
+        volume: r.day_vol ?? r.reg_vol ?? 0,
+        gapPercent: gapPct ?? 0,
+        marketOpen: round2(regOpen),
+        marketClose: regClose != null ? round2(regClose) : undefined,
+        closedOverVwap:
+          regClose != null && regVwap != null ? regClose >= regVwap : undefined,
+        hodPushPct: ir.intradayRunPct,
+      });
+    }
+
+    if (r.pm_high != null && prevClose) {
+      premarket.push({
+        date: d,
+        percentageGain: round2(((r.pm_high - prevClose) / prevClose) * 100),
+        spikeDurationMinutes: r.pm_spike_min,
+        premarketDollarVolume: r.pm_dollar != null ? Math.round(r.pm_dollar) : undefined,
+        closedOverVwap:
+          regClose != null && regVwap != null ? regClose >= regVwap : undefined,
+        gapped: gapPct != null && gapPct >= 3,
+      });
+    }
+
+    if (r.ah_high != null && regClose) {
+      afterhours.push({
+        date: d,
+        percentageGain: round2(((r.ah_high - regClose) / regClose) * 100),
+        spikeDurationMinutes: r.ah_spike_min,
+        afterhoursDollarVolume: r.ah_dollar != null ? Math.round(r.ah_dollar) : undefined,
+        closedOverVwap:
+          regClose != null && regVwap != null ? regClose >= regVwap : undefined,
+        gapped: gapPct != null && Math.abs(gapPct) >= 3,
+      });
+    }
+
+    if (regClose != null) {
+      prevClose = regClose;
+      prevDayRec = r;
     }
   }
 
   gaps.reverse();
+  premarket.reverse();
+  afterhours.reverse();
   intraday_runners.reverse();
 
-  return {
-    gaps,
-    premarket: gaps.map((g) => ({
-      date: g.date,
-      percentageGain: g.gapPercent * 0.7,
-      spikeDurationMinutes: undefined,
-      premarketDollarVolume: undefined,
-      closedOverVwap: g.closedOverVwap,
-    })),
-    afterhours: gaps.map((g) => ({
-      date: g.date,
-      percentageGain: (g.dayChangePercent ?? 0) * 0.3,
-      spikeDurationMinutes: undefined,
-      afterhoursDollarVolume: undefined,
-      closedOverVwap: g.closedOverVwap,
-    })),
-    intraday_runners,
-  };
+  return { gaps, premarket, afterhours, intraday_runners };
 }
 
-export async function fetchGapDays(ticker: string): Promise<GapDayRow[]> {
-  const scan = await scanTickerPolygon(ticker);
+const scanCache = new Map<string, Awaited<ReturnType<typeof scanTickerPolygon>>>();
+
+function cacheKey(ticker: string, from: string, to: string): string {
+  return `${ticker.toUpperCase()}:${from.slice(0, 10)}:${to.slice(0, 10)}`;
+}
+
+export function clearScanTickerCache(ticker: string, from: string, to: string): void {
+  scanCache.delete(cacheKey(ticker, from, to));
+}
+
+export async function getScanTickerCached(
+  ticker: string,
+  from: string,
+  to: string,
+  signal?: AbortSignal
+) {
+  const fromStr = from.slice(0, 10);
+  const toStr = to.slice(0, 10);
+  const days = weekdaysBetween(fromStr, toStr);
+  if (days > GAP_VIEWER_MAX_DAYS) {
+    throw new Error(`Date range too large (${days} weekdays; max ${GAP_VIEWER_MAX_DAYS})`);
+  }
+
+  const key = cacheKey(ticker, fromStr, toStr);
+  if (scanCache.has(key)) return scanCache.get(key)!;
+
+  if (signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    throw err;
+  }
+
+  const result = await scanTickerPolygon(ticker, { dateFrom: fromStr, dateTo: toStr });
+  scanCache.set(key, result);
+  return result;
+}
+
+export async function fetchGapDays(ticker: string, from?: string, to?: string): Promise<GapDayRow[]> {
+  const t = todayEt();
+  const scan = await getScanTickerCached(ticker, from ?? addDays(t, -GAP_VIEWER_MAX_DAYS), to ?? t);
   return scan.gaps;
 }
 
-export async function fetchPremarketDays(ticker: string): Promise<PremarketRow[]> {
-  const scan = await scanTickerPolygon(ticker);
+export async function fetchPremarketDays(ticker: string, from?: string, to?: string): Promise<PremarketRow[]> {
+  const t = todayEt();
+  const scan = await getScanTickerCached(ticker, from ?? addDays(t, -GAP_VIEWER_MAX_DAYS), to ?? t);
   return scan.premarket;
 }
 
-export async function fetchAfterhoursDays(ticker: string): Promise<AfterhoursRow[]> {
-  const scan = await scanTickerPolygon(ticker);
+export async function fetchAfterhoursDays(ticker: string, from?: string, to?: string): Promise<AfterhoursRow[]> {
+  const t = todayEt();
+  const scan = await getScanTickerCached(ticker, from ?? addDays(t, -GAP_VIEWER_MAX_DAYS), to ?? t);
   return scan.afterhours;
 }
 
-export async function fetchIntradayRunners(ticker: string): Promise<GapDayRow[]> {
-  const scan = await scanTickerPolygon(ticker);
+export async function fetchIntradayRunners(ticker: string, from?: string, to?: string): Promise<GapDayRow[]> {
+  const t = todayEt();
+  const scan = await getScanTickerCached(ticker, from ?? addDays(t, -GAP_VIEWER_MAX_DAYS), to ?? t);
   return scan.intraday_runners;
 }
+
+export { GAP_VIEWER_MAX_DAYS };
